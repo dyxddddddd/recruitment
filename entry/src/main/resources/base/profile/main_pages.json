@@ -1,0 +1,16 @@
+{
+  "src": [
+    "pages/SplashPage",
+    "pages/Index",
+    "pages/WelcomePage",
+    "pages/login/LoginPage",
+    "pages/login/BindPhonePage",
+    "pages/job_seeker/JobSeekerMainPage",
+    "pages/job_seeker/JobDetailPage",
+    "pages/job_seeker/CompanyDetailPage",
+    "pages/job_seeker/ResumeEditPage",
+    "pages/recruiter/RecruiterMainPage",
+    "pages/recruiter/TalentDetailPage",
+    "pages/recruiter/AuthPage"
+  ]
+}
