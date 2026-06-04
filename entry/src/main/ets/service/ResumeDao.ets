@@ -8,6 +8,16 @@ import { ResumeInfo, EducationItem, ExperienceItem, CourseSchedule, SemesterSche
 export class ResumeDao {
   private helper: DatabaseHelper = DatabaseHelper.getInstance()
 
+  async upsertResume(resume: ResumeInfo): Promise<void> {
+    const existing = await this.getResumeByUserId(resume.userId)
+    if (existing) {
+      resume.resumeId = existing.resumeId
+      await this.updateResume(resume)
+    } else {
+      await this.insertResume(resume)
+    }
+  }
+
   async insertResume(resume: ResumeInfo): Promise<void> {
     const store = await this.helper.getStore()
     const vb: relationalStore.ValuesBucket = {
@@ -145,6 +155,26 @@ export class ResumeDao {
       return schedule
     }
     return null
+  }
+
+  async replaceEducationList(resumeId: string, educationList: EducationItem[]): Promise<void> {
+    const store = await this.helper.getStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_EDUCATION)
+    predicates.equalTo('resume_id', resumeId)
+    await store.delete(predicates)
+    for (let i = 0; i < educationList.length; i++) {
+      await this.insertEducation(educationList[i], resumeId)
+    }
+  }
+
+  async replaceExperienceList(resumeId: string, experienceList: ExperienceItem[]): Promise<void> {
+    const store = await this.helper.getStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_EXPERIENCE)
+    predicates.equalTo('resume_id', resumeId)
+    await store.delete(predicates)
+    for (let i = 0; i < experienceList.length; i++) {
+      await this.insertExperience(experienceList[i], resumeId)
+    }
   }
 
   private async getEducationList(resumeId: string): Promise<EducationItem[]> {

@@ -128,6 +128,19 @@ export class CompanyDao {
     await store.insert(TABLE_COMMUNITY_POST, vb)
   }
 
+  async insertComment(comment: PostComment): Promise<void> {
+    const store = await this.helper.getStore()
+    const vb: relationalStore.ValuesBucket = {
+      comment_id: comment.commentId,
+      post_id: comment.postId,
+      user_id: comment.userId,
+      content: comment.content,
+      is_anonymous: comment.isAnonymous ? 1 : 0,
+      create_time: comment.createTime
+    }
+    await store.insert(TABLE_POST_COMMENT, vb)
+  }
+
   async getComments(postId: string): Promise<PostComment[]> {
     const store = await this.helper.getStore()
     const predicates = new relationalStore.RdbPredicates(TABLE_POST_COMMENT)

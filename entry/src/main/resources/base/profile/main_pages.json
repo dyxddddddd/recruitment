@@ -11,6 +11,12 @@
     "pages/job_seeker/ResumeEditPage",
     "pages/recruiter/RecruiterMainPage",
     "pages/recruiter/TalentDetailPage",
-    "pages/recruiter/AuthPage"
+    "pages/recruiter/AuthPage",
+    "pages/ChatPage",
+    "pages/job_seeker/IdentityGuidePage",
+    "pages/job_seeker/AIRecruiterAssistantPage",
+    "pages/job_seeker/ContractReviewPage",
+    "pages/job_seeker/AIDigitalTwinPage",
+    "pages/job_seeker/ApplicationTrackPage"
   ]
 }

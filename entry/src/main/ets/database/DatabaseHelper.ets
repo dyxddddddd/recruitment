@@ -3,6 +3,7 @@
 import { relationalStore } from '@kit.ArkData'
 import { DATABASE_NAME, ALL_CREATE_TABLES } from './Tables'
 import { hilog } from '@kit.PerformanceAnalysisKit'
+import { DemoDataInitializer } from './DemoDataInitializer'
 
 const TAG = 'DatabaseHelper'
 
@@ -39,6 +40,7 @@ export class DatabaseHelper {
     }
 
     await this.migrateV1ToV2()
+    await DemoDataInitializer.seed(this.store)
 
     return this.store
   }

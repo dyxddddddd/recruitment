@@ -107,6 +107,17 @@ export class UserDao {
     await store.delete(predicates)
   }
 
+  async updateStudentType(userId: string, studentType: StudentType): Promise<void> {
+    const store = await this.helper.getStore()
+    const valueBucket: relationalStore.ValuesBucket = {
+      student_type: studentType,
+      update_time: Date.now()
+    }
+    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
+    predicates.equalTo('user_id', userId)
+    await store.update(valueBucket, predicates)
+  }
+
   async isPhoneBound(phone: string): Promise<boolean> {
     const store = await this.helper.getStore()
     const predicates = new relationalStore.RdbPredicates(TABLE_USER)
@@ -156,7 +167,11 @@ export class UserDao {
       userId: row.getString(row.getColumnIndex('user_id')),
       phone: row.getString(row.getColumnIndex('phone')),
       role: (roleStr === UserRole.RECRUITER ? UserRole.RECRUITER : UserRole.JOB_SEEKER) as UserRole,
-      studentType: (studentTypeStr === StudentType.GRADUATING ? StudentType.GRADUATING : StudentType.CURRENT) as StudentType,
+      studentType: studentTypeStr === StudentType.GRADUATING
+        ? StudentType.GRADUATING
+        : studentTypeStr === StudentType.CURRENT
+          ? StudentType.CURRENT
+          : undefined,
       realName: row.getString(row.getColumnIndex('real_name')),
       gender: (genderStr === Gender.MALE ? Gender.MALE : genderStr === Gender.FEMALE ? Gender.FEMALE : Gender.UNKNOWN) as Gender,
       birthday: row.getString(row.getColumnIndex('birthday')),

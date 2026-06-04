@@ -1,8 +1,8 @@
-// 登录页面 - 手机号（密码/验证码）/微信/QQ + 游客模式
-
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { UserProfile, UserRole } from '../../model/UserModel'
+import { SmsService } from '../../service/SmsService'
+import { ThirdPartyAuthService } from '../../service/ThirdPartyAuthService'
 import { UserDao } from '../../service/UserDao'
 
 @Entry
@@ -15,9 +15,20 @@ struct LoginPage {
   @State countDown: number = 0
   @State loginType: number = 0
   @State loginSubType: number = 0
-  private userDao: UserDao = new UserDao()
+  @State entryRole: UserRole = UserRole.JOB_SEEKER
 
-  sendVerifyCode(): void {
+  private userDao: UserDao = new UserDao()
+  private smsService: SmsService = new SmsService()
+  private thirdPartyAuthService: ThirdPartyAuthService = new ThirdPartyAuthService()
+
+  aboutToAppear(): void {
+    const params = router.getParams() as Record<string, Object>
+    if (params && params['role'] === UserRole.RECRUITER) {
+      this.entryRole = UserRole.RECRUITER
+    }
+  }
+
+  async sendVerifyCode(): Promise<void> {
     if (this.phoneNumber.length < 11) {
       this.showToast('请输入正确的手机号')
       return
@@ -31,6 +42,13 @@ struct LoginPage {
         this.isSendingCode = false
       }
     }, 1000)
+    const result = await this.smsService.sendVerifyCode(this.phoneNumber)
+    if (!result.success) {
+      clearInterval(timer)
+      this.countDown = 0
+      this.isSendingCode = false
+      this.showToast(result.message)
+    }
   }
 
   async handlePasswordLogin(): Promise<void> {
@@ -43,6 +61,10 @@ struct LoginPage {
       this.showToast('手机号或密码错误')
       return
     }
+    if (this.entryRole === UserRole.RECRUITER && user.role !== UserRole.RECRUITER) {
+      this.showToast('当前入口为招聘者登录，请使用 HR 账号')
+      return
+    }
     await this.loginSuccess(user)
   }
 
@@ -51,19 +73,43 @@ struct LoginPage {
       this.showToast('请完整填写手机号和验证码')
       return
     }
+    const result = await this.smsService.verifyCode(this.phoneNumber, this.verifyCode)
+    if (!result.success) {
+      this.showToast(result.message)
+      return
+    }
     const user = await this.userDao.getUserByPhone(this.phoneNumber)
     if (!user) {
-      this.showToast('该手机号未注册，请先绑定手机号')
+      this.showToast('该手机号未注册，请先注册')
+      return
+    }
+    if (this.entryRole === UserRole.RECRUITER && user.role !== UserRole.RECRUITER) {
+      this.showToast('当前入口为招聘者登录，请使用 HR 账号')
       return
     }
     await this.loginSuccess(user)
   }
 
   async handleThirdPartyLogin(platform: string): Promise<void> {
-    router.pushUrl({
-      url: AppConstants.ROUTE_BIND_PHONE,
-      params: { platform: platform }
-    })
+    try {
+      const authResult = await this.thirdPartyAuthService.authorize(platform)
+      if (!authResult.success) {
+        this.showToast('第三方授权失败，请稍后重试')
+        return
+      }
+      router.pushUrl({
+        url: AppConstants.ROUTE_BIND_PHONE,
+        params: {
+          platform: authResult.platform,
+          openId: authResult.openId,
+          nickname: authResult.nickname,
+          avatar: authResult.avatar,
+          authCode: authResult.authCode
+        }
+      })
+    } catch (e) {
+      this.showToast(e instanceof Error ? e.message : '第三方登录失败')
+    }
   }
 
   async handleGuestMode(): Promise<void> {
@@ -84,9 +130,10 @@ struct LoginPage {
     AppState.currentUser = user
     AppState.isLoggedIn = true
     AppState.isGuest = false
-
     if (user.role === UserRole.RECRUITER) {
       router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_MAIN })
+    } else if (!user.studentType) {
+      router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
     } else {
       router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })
     }
@@ -114,11 +161,11 @@ struct LoginPage {
       .margin({ top: 28 })
 
       Column() {
-        Text('欢迎回来')
+        Text(this.entryRole === UserRole.RECRUITER ? 'HR 登录' : '欢迎回来')
           .fontSize(28)
           .fontWeight(FontWeight.Bold)
           .fontColor(AppConstants.COLOR_TEXT_PRIMARY)
-        Text('登录以使用全部功能')
+        Text(this.entryRole === UserRole.RECRUITER ? '登录后即可发布职位与管理人才' : '登录以使用全部功能')
           .fontSize(14)
           .fontColor(AppConstants.COLOR_TEXT_HINT)
           .margin({ top: 8 })
@@ -127,14 +174,13 @@ struct LoginPage {
       .alignItems(HorizontalAlign.Start)
       .padding({ left: 32, top: 32, bottom: 32 })
 
-      // 登录方式切换
       Row() {
         Column() {
           Text('手机号登录')
             .fontSize(15)
-            .fontColor(this.loginType === 0 ? '#4A90D9' : '#666666')
+            .fontColor(this.loginType === 0 ? AppConstants.COLOR_PRIMARY : '#666666')
           if (this.loginType === 0) {
-            Divider().width(60).height(2).color('#4A90D9').margin({ top: 6 })
+            Divider().width(60).height(2).color(AppConstants.COLOR_PRIMARY).margin({ top: 6 })
           }
         }
         .onClick(() => { this.loginType = 0 })
@@ -142,19 +188,19 @@ struct LoginPage {
         Column() {
           Text('微信登录')
             .fontSize(15)
-            .fontColor(this.loginType === 1 ? '#4A90D9' : '#666666')
+            .fontColor(this.loginType === 1 ? AppConstants.COLOR_PRIMARY : '#666666')
           if (this.loginType === 1) {
-            Divider().width(60).height(2).color('#4A90D9').margin({ top: 6 })
+            Divider().width(60).height(2).color(AppConstants.COLOR_PRIMARY).margin({ top: 6 })
           }
         }
         .onClick(() => { this.loginType = 1 })
 
         Column() {
-          Text('QQ登录')
+          Text('QQ 登录')
             .fontSize(15)
-            .fontColor(this.loginType === 2 ? '#4A90D9' : '#666666')
+            .fontColor(this.loginType === 2 ? AppConstants.COLOR_PRIMARY : '#666666')
           if (this.loginType === 2) {
-            Divider().width(60).height(2).color('#4A90D9').margin({ top: 6 })
+            Divider().width(60).height(2).color(AppConstants.COLOR_PRIMARY).margin({ top: 6 })
           }
         }
         .onClick(() => { this.loginType = 2 })
@@ -163,17 +209,15 @@ struct LoginPage {
       .justifyContent(FlexAlign.SpaceAround)
       .margin({ bottom: 24 })
 
-      // 手机号登录表单
       if (this.loginType === 0) {
         Column() {
-          // 手机号输入
           Row() {
             Text('+86')
               .fontSize(15)
               .fontColor('#1A1A1A')
               .padding({ right: 8 })
               .border({ width: { right: 1 }, color: '#E5E5E5' })
-            TextInput({ placeholder: '请输入手机号' })
+            TextInput({ placeholder: '请输入手机号', text: this.phoneNumber })
               .layoutWeight(1)
               .fontSize(15)
               .type(InputType.Number)
@@ -187,9 +231,8 @@ struct LoginPage {
           .padding({ left: 12, right: 12 })
           .margin({ bottom: 16 })
 
-          // 密码登录
           if (this.loginSubType === 0) {
-            TextInput({ placeholder: '请输入密码' })
+            TextInput({ placeholder: '请输入密码', text: this.password })
               .width('80%')
               .height(48)
               .fontSize(15)
@@ -202,7 +245,7 @@ struct LoginPage {
 
             Text('验证码登录')
               .fontSize(12)
-              .fontColor('#4A90D9')
+              .fontColor(AppConstants.COLOR_PRIMARY)
               .alignSelf(ItemAlign.End)
               .margin({ right: '10%', bottom: 16 })
               .onClick(() => { this.loginSubType = 1 })
@@ -211,15 +254,14 @@ struct LoginPage {
               .width('80%')
               .height(48)
               .fontSize(16)
-              .backgroundColor('#4A90D9')
+              .backgroundColor(AppConstants.COLOR_PRIMARY)
               .borderRadius(24)
               .onClick(() => this.handlePasswordLogin())
           }
 
-          // 验证码登录
           if (this.loginSubType === 1) {
             Row() {
-              TextInput({ placeholder: '验证码' })
+              TextInput({ placeholder: '验证码', text: this.verifyCode })
                 .layoutWeight(1)
                 .fontSize(15)
                 .type(InputType.Number)
@@ -229,7 +271,7 @@ struct LoginPage {
               Button(this.isSendingCode ? `${this.countDown}s` : '获取验证码')
                 .fontSize(12)
                 .height(32)
-                .backgroundColor(this.isSendingCode ? '#E5E5E5' : '#4A90D9')
+                .backgroundColor(this.isSendingCode ? '#E5E5E5' : AppConstants.COLOR_PRIMARY)
                 .fontColor(this.isSendingCode ? '#999999' : '#FFFFFF')
                 .borderRadius(16)
                 .enabled(!this.isSendingCode)
@@ -243,7 +285,7 @@ struct LoginPage {
 
             Text('密码登录')
               .fontSize(12)
-              .fontColor('#4A90D9')
+              .fontColor(AppConstants.COLOR_PRIMARY)
               .alignSelf(ItemAlign.End)
               .margin({ right: '10%', bottom: 16 })
               .onClick(() => { this.loginSubType = 0 })
@@ -252,7 +294,7 @@ struct LoginPage {
               .width('80%')
               .height(48)
               .fontSize(16)
-              .backgroundColor('#4A90D9')
+              .backgroundColor(AppConstants.COLOR_PRIMARY)
               .borderRadius(24)
               .onClick(() => this.handleCodeLogin())
           }
@@ -261,10 +303,9 @@ struct LoginPage {
         .alignItems(HorizontalAlign.Center)
       }
 
-      // 微信登录
       if (this.loginType === 1) {
         Column() {
-          Text('使用微信一键登录')
+          Text('使用微信授权后仍需绑定真实手机号')
             .fontSize(14)
             .fontColor('#666666')
             .margin({ top: 40, bottom: 24 })
@@ -280,14 +321,13 @@ struct LoginPage {
         .alignItems(HorizontalAlign.Center)
       }
 
-      // QQ登录
       if (this.loginType === 2) {
         Column() {
-          Text('使用QQ一键登录')
+          Text('使用 QQ 授权后仍需绑定真实手机号')
             .fontSize(14)
             .fontColor('#666666')
             .margin({ top: 40, bottom: 24 })
-          Button('QQ授权登录')
+          Button('QQ 授权登录')
             .width('80%')
             .height(48)
             .fontSize(16)
@@ -301,11 +341,13 @@ struct LoginPage {
 
       Blank()
 
-      Text('游客模式浏览（仅限查看）')
-        .fontSize(13)
-        .fontColor('#4A90D9')
-        .onClick(() => this.handleGuestMode())
-        .margin({ bottom: 32 })
+      if (this.entryRole === UserRole.JOB_SEEKER) {
+        Text('游客模式浏览（仅限查看）')
+          .fontSize(13)
+          .fontColor(AppConstants.COLOR_PRIMARY)
+          .onClick(() => this.handleGuestMode())
+          .margin({ bottom: 32 })
+      }
     }
     .width('100%')
     .height('100%')

@@ -1,8 +1,7 @@
-// 第三方登录后强制绑定手机号页面
-
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { UserProfile, UserRole } from '../../model/UserModel'
+import { SmsService } from '../../service/SmsService'
 import { UserDao } from '../../service/UserDao'
 
 @Entry
@@ -14,16 +13,24 @@ struct BindPhonePage {
   @State isSendingCode: boolean = false
   @State countDown: number = 0
   @State platform: string = ''
+  @State openId: string = ''
+  @State nickname: string = ''
+  @State avatar: string = ''
+
   private userDao: UserDao = new UserDao()
+  private smsService: SmsService = new SmsService()
 
   aboutToAppear(): void {
     const params = router.getParams() as Record<string, Object>
-    if (params && params['platform']) {
-      this.platform = params['platform'] as string
+    if (params) {
+      this.platform = (params['platform'] as string) || ''
+      this.openId = (params['openId'] as string) || ''
+      this.nickname = (params['nickname'] as string) || ''
+      this.avatar = (params['avatar'] as string) || ''
     }
   }
 
-  sendVerifyCode(): void {
+  async sendVerifyCode(): Promise<void> {
     if (this.phoneNumber.length < 11) {
       AlertDialog.show({ message: '请输入正确的手机号' })
       return
@@ -37,6 +44,13 @@ struct BindPhonePage {
         this.isSendingCode = false
       }
     }, 1000)
+    const result = await this.smsService.sendVerifyCode(this.phoneNumber)
+    if (!result.success) {
+      clearInterval(timer)
+      this.countDown = 0
+      this.isSendingCode = false
+      AlertDialog.show({ message: result.message })
+    }
   }
 
   async bindAndLogin(): Promise<void> {
@@ -45,7 +59,12 @@ struct BindPhonePage {
       return
     }
     if (!this.password || this.password.length < 6) {
-      AlertDialog.show({ message: '请设置至少6位密码' })
+      AlertDialog.show({ message: '请设置至少 6 位密码' })
+      return
+    }
+    const verifyResult = await this.smsService.verifyCode(this.phoneNumber, this.verifyCode)
+    if (!verifyResult.success) {
+      AlertDialog.show({ message: verifyResult.message })
       return
     }
     const isBound = await this.userDao.isPhoneBound(this.phoneNumber)
@@ -55,18 +74,21 @@ struct BindPhonePage {
     }
 
     const user: UserProfile = {
-      userId: `phone_${this.phoneNumber}`,
+      userId: this.openId ? `${this.platform}_${this.openId}` : `phone_${this.phoneNumber}`,
       phone: this.phoneNumber,
       password: this.password,
       role: UserRole.JOB_SEEKER,
-      isGuest: false
+      isGuest: false,
+      realName: this.nickname || '',
+      avatar: this.avatar || ''
     }
+
+    await this.userDao.logoutAll()
     await this.userDao.insertUser(user)
     AppState.currentUser = user
     AppState.isLoggedIn = true
     AppState.isGuest = false
-
-    router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })
+    router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
   }
 
   build() {
@@ -91,7 +113,7 @@ struct BindPhonePage {
           .fontSize(24)
           .fontWeight(FontWeight.Bold)
           .margin({ bottom: 8 })
-        Text(`为确保平台真实性，${this.platform === 'wechat' ? '微信' : 'QQ'}登录后需绑定真实手机号`)
+        Text(`为确保平台真实可信，${this.platform === 'wechat' ? '微信' : 'QQ'}登录后仍需绑定真实手机号`)
           .fontSize(13)
           .fontColor('#999999')
           .textAlign(TextAlign.Center)
@@ -107,7 +129,7 @@ struct BindPhonePage {
             .fontSize(15)
             .padding({ right: 8 })
             .border({ width: { right: 1 }, color: '#E5E5E5' })
-          TextInput({ placeholder: '请输入手机号' })
+          TextInput({ placeholder: '请输入手机号', text: this.phoneNumber })
             .layoutWeight(1)
             .fontSize(15)
             .type(InputType.Number)
@@ -122,7 +144,7 @@ struct BindPhonePage {
         .margin({ bottom: 16 })
 
         Row() {
-          TextInput({ placeholder: '验证码' })
+          TextInput({ placeholder: '验证码', text: this.verifyCode })
             .layoutWeight(1)
             .fontSize(15)
             .type(InputType.Number)
@@ -133,7 +155,7 @@ struct BindPhonePage {
           Button(this.isSendingCode ? `${this.countDown}s` : '获取验证码')
             .fontSize(12)
             .height(32)
-            .backgroundColor(this.isSendingCode ? '#E5E5E5' : '#4A90D9')
+            .backgroundColor(this.isSendingCode ? '#E5E5E5' : AppConstants.COLOR_PRIMARY)
             .fontColor(this.isSendingCode ? '#999999' : '#FFFFFF')
             .borderRadius(16)
             .enabled(!this.isSendingCode)
@@ -146,7 +168,7 @@ struct BindPhonePage {
         .margin({ bottom: 16 })
 
         Row() {
-          TextInput({ placeholder: '设置登录密码（至少6位）' })
+          TextInput({ placeholder: '设置登录密码（至少 6 位）', text: this.password })
             .layoutWeight(1)
             .fontSize(15)
             .type(InputType.Password)
@@ -160,11 +182,11 @@ struct BindPhonePage {
         .padding({ left: 12, right: 12 })
         .margin({ bottom: 32 })
 
-        Button('完成绑定并进入')
+        Button('完成绑定并继续')
           .width('80%')
           .height(48)
           .fontSize(16)
-          .backgroundColor('#4A90D9')
+          .backgroundColor(AppConstants.COLOR_PRIMARY)
           .borderRadius(24)
           .onClick(() => this.bindAndLogin())
       }

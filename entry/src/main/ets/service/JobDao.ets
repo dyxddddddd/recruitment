@@ -220,7 +220,9 @@ export class JobDao {
         : ApplicationStatus.SUBMITTED) as ApplicationStatus,
       applyTime: row.getLong(row.getColumnIndex('apply_time')),
       interviewTime: row.getLong(row.getColumnIndex('interview_time')),
-      remark: row.getString(row.getColumnIndex('remark'))
+      remark: row.getString(row.getColumnIndex('remark')),
+      rejectionReason: row.getString(row.getColumnIndex('rejection_reason')) || undefined,
+      viewTime: row.getLong(row.getColumnIndex('view_time')) || undefined
     }
   }
 

@@ -11,6 +11,14 @@
     {
       "name": "EntryAbility_label",
       "value": "label"
+    },
+    {
+      "name": "camera_permission_reason",
+      "value": "用于拍摄或选择图片，完成合同审查和课表识别"
+    },
+    {
+      "name": "location_permission_reason",
+      "value": "用于获取当前位置并推荐附近岗位与企业信息"
     }
   ]
 }

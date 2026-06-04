@@ -42,6 +42,9 @@ export interface JobApplication {
   applyTime: number
   interviewTime?: number
   remark?: string
+  // HR反馈
+  rejectionReason?: string           // 拒绝理由（如学历不符 / 经验不足 / 已招满）
+  viewTime?: number                 // HR查看时间
 }
 
 export enum ApplicationStatus {

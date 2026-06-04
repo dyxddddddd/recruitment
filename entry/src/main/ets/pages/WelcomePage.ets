@@ -1,7 +1,7 @@
 // 首次使用 - 协议同意与权限获取页
 
 import { router } from '@kit.ArkUI'
-import { AppConstants } from '../common/constants/AppConstants'
+import { AppConstants, AppState } from '../common/constants/AppConstants'
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit'
 import { common } from '@kit.AbilityKit'
 import { BusinessError } from '@kit.BasicServicesKit'
@@ -12,23 +12,34 @@ struct WelcomePage {
   @State agreementChecked: boolean = false
   @State showAgreementDetail: boolean = false
   @State permissionGranted: boolean = false
+  @State isLoading: boolean = false
 
   async requestPermissions(): Promise<void> {
-    const atManager = abilityAccessCtrl.createAtManager()
-    const context = getContext(this) as common.UIAbilityContext
-    const permissions: Permissions[] = [
-      'ohos.permission.APPROXIMATELY_LOCATION'
-    ]
+    if (this.isLoading) {
+      return
+    }
+    this.isLoading = true
     try {
+      const atManager = abilityAccessCtrl.createAtManager()
+      const context = getContext(this) as common.UIAbilityContext
+      const permissions: Permissions[] = [
+        'ohos.permission.CAMERA',
+        'ohos.permission.APPROXIMATELY_LOCATION'
+      ]
       const result = await atManager.requestPermissionsFromUser(context, permissions)
       this.permissionGranted = result.authResults.every(r => r === 0)
-      if (this.permissionGranted) {
-        router.replaceUrl({ url: AppConstants.ROUTE_INDEX })
-      }
     } catch (err) {
       const e = err as BusinessError
       console.error('权限申请失败: ' + e.message)
+      this.permissionGranted = false
     }
+    this.navigateToNext()
+  }
+
+  navigateToNext(): void {
+    this.isLoading = false
+    AppState.agreementAccepted = true
+    router.replaceUrl({ url: AppConstants.ROUTE_INDEX })
   }
 
   build() {
@@ -90,17 +101,14 @@ struct WelcomePage {
           }
           .margin({ bottom: 16 })
 
-          Button('同意并开始使用')
+          Button(this.isLoading ? '正在进入...' : '同意并开始使用')
             .width('85%')
             .height(48)
             .fontSize(16)
-            .backgroundColor('#4A90D9')
+            .backgroundColor(this.agreementChecked ? '#4A90D9' : '#CCCCCC')
             .borderRadius(24)
-            .enabled(this.agreementChecked)
-            .opacity(this.agreementChecked ? 1 : 0.5)
-            .onClick((): void => {
-              this.requestPermissions()
-            })
+            .enabled(this.agreementChecked && !this.isLoading)
+            .onClick(() => { this.requestPermissions() })
             .margin({ bottom: 24 })
         }
         .width('100%')
@@ -145,7 +153,6 @@ struct WelcomePage {
                   .fontSize(13)
                   .fontColor('#666666')
                   .lineHeight(22)
-
               }
               .padding({ left: 8, right: 8 })
             }

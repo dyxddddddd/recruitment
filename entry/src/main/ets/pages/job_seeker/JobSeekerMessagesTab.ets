@@ -1,5 +1,3 @@
-// 求职者 - 消息页（Tab d: 消息 + AI数字分身）
-
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { ChatSession } from '../../model/MessageModel'
@@ -9,6 +7,7 @@ import { MessageDao } from '../../service/MessageDao'
 export struct JobSeekerMessagesTab {
   @State sessions: ChatSession[] = []
   @State isAIEnabled: boolean = false
+
   private messageDao: MessageDao = new MessageDao()
 
   aboutToAppear(): void {
@@ -16,14 +15,42 @@ export struct JobSeekerMessagesTab {
   }
 
   async loadSessions(): Promise<void> {
-    if (AppState.currentUser) {
-      this.sessions = await this.messageDao.getSessions(AppState.currentUser.userId)
+    if (!AppState.currentUser) {
+      this.sessions = []
+      this.isAIEnabled = false
+      return
     }
+    await this.messageDao.ensureJobSeekerStarterSession(AppState.currentUser.userId)
+    this.isAIEnabled = await this.messageDao.getAIAgentEnabled(AppState.currentUser.userId)
+    this.sessions = await this.messageDao.getSessions(AppState.currentUser.userId)
+  }
+
+  handleSessionClick(session: ChatSession): void {
+    router.pushUrl({
+      url: AppConstants.ROUTE_CHAT,
+      params: {
+        sessionId: session.sessionId,
+        peerName: session.peerName,
+        isAIAgent: session.isAIAgent
+      }
+    })
+  }
+
+  async toggleAI(value: boolean): Promise<void> {
+    this.isAIEnabled = value
+    if (AppState.currentUser) {
+      await this.messageDao.updateAIAgentEnabled(AppState.currentUser.userId, value)
+    }
+    AlertDialog.show({
+      title: value ? 'AI 数字分身已开启' : 'AI 数字分身已关闭',
+      message: value
+        ? '开启后，系统会在你离线时根据简历与时间底线帮助你先接住 HR 的初步沟通。'
+        : '关闭后，HR 消息将只等待你本人上线处理。'
+    })
   }
 
   build() {
     Column() {
-      // 顶部标题 + AI开关
       Row() {
         Text('消息')
           .fontSize(18)
@@ -32,24 +59,15 @@ export struct JobSeekerMessagesTab {
 
         Blank()
 
-        // 创新点六：AI数字分身开关
         Row() {
-          Text('AI分身')
+          Text('AI 分身')
             .fontSize(11)
             .fontColor(this.isAIEnabled ? '#FFFFFF' : '#999999')
             .margin({ right: 6 })
 
           Toggle({ type: ToggleType.Switch, isOn: this.isAIEnabled })
             .selectedColor(AppConstants.COLOR_AI_PURPLE)
-            .onChange((value: boolean) => {
-              this.isAIEnabled = value
-              AlertDialog.show({
-                title: value ? 'AI数字分身已开启' : 'AI数字分身已关闭',
-                message: value
-                  ? '24小时AI替身将自动回复HR消息，达成意向后强提醒通知你。'
-                  : 'AI替身已关闭，你将直接收到所有HR消息。'
-              })
-            })
+            .onChange((value: boolean) => { this.toggleAI(value) })
         }
         .padding({ left: 10, right: 10, top: 4, bottom: 4 })
         .backgroundColor(this.isAIEnabled ? 'rgba(155,89,182,0.15)' : '#F5F5F5')
@@ -62,13 +80,13 @@ export struct JobSeekerMessagesTab {
 
       if (this.sessions.length === 0) {
         Column() {
-          Text('📬')
+          Text('💤')
             .fontSize(48)
             .margin({ bottom: 12 })
           Text('暂无消息')
             .fontSize(14)
             .fontColor('#999999')
-          Text('投递简历后将在这里收到HR消息')
+          Text('投递简历后将会在这里收到 HR 消息')
             .fontSize(12)
             .fontColor('#CCCCCC')
             .margin({ top: 4 })
@@ -81,7 +99,6 @@ export struct JobSeekerMessagesTab {
           ForEach(this.sessions, (session: ChatSession) => {
             ListItem() {
               Row() {
-                // 头像
                 Text('💬')
                   .fontSize(32)
                   .margin({ right: 12 })
@@ -133,6 +150,7 @@ export struct JobSeekerMessagesTab {
               .padding({ top: 14, bottom: 14 })
               .border({ width: { bottom: 0.5 }, color: '#F0F0F0' })
             }
+            .onClick(() => this.handleSessionClick(session))
           })
         }
         .width('100%')

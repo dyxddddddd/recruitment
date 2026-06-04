@@ -1,10 +1,9 @@
-// 求职者主页面 - 五大核心Tab容器
-
+import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
-import { UserRole, StudentType } from '../../model/UserModel'
-import { JobSeekerJobsTab } from './JobSeekerJobsTab'
+import { StudentType } from '../../model/UserModel'
 import { JobSeekerCompaniesTab } from './JobSeekerCompaniesTab'
 import { JobSeekerCommunityTab } from './JobSeekerCommunityTab'
+import { JobSeekerJobsTab } from './JobSeekerJobsTab'
 import { JobSeekerMessagesTab } from './JobSeekerMessagesTab'
 import { JobSeekerProfileTab } from './JobSeekerProfileTab'
 
@@ -12,19 +11,16 @@ import { JobSeekerProfileTab } from './JobSeekerProfileTab'
 @Component
 struct JobSeekerMainPage {
   @State currentTabIndex: number = 0
-  @State isAIEnabled: boolean = false
   private tabsController: TabsController = new TabsController()
 
   aboutToAppear(): void {
     if (!AppState.currentUser) {
-      // 游客模式默认设置
       AppState.isGuest = true
     }
   }
 
   build() {
     Column() {
-      // 顶部身份快捷切换
       Row() {
         Text(AppConstants.APP_NAME)
           .fontSize(18)
@@ -33,20 +29,38 @@ struct JobSeekerMainPage {
 
         Blank()
 
-        Row() {
-          Text(AppState.currentUser?.studentType === StudentType.GRADUATING ? '应届生' : '在校生')
-            .fontSize(11)
-            .fontColor('#FFFFFF')
-            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-            .backgroundColor('rgba(255,255,255,0.25)')
-            .borderRadius(10)
-        }
+        Text(AppState.currentUser?.studentType === StudentType.GRADUATING ? '应届生' : '在校生')
+          .fontSize(11)
+          .fontColor('#FFFFFF')
+          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .backgroundColor('rgba(255,255,255,0.25)')
+          .borderRadius(10)
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 28, bottom: 12 })
+      .padding({ left: 20, right: 20, top: 60, bottom: 12 })
       .backgroundColor(AppConstants.COLOR_PRIMARY)
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
 
-      // Tab内容区
+      if (AppState.isGuest) {
+        Row() {
+          Text('游客模式仅开放职位、名企、社区浏览')
+            .fontSize(11)
+            .fontColor('#FFFFFF')
+          Blank()
+          Button('去登录')
+            .fontSize(11)
+            .height(24)
+            .backgroundColor('#FFFFFF')
+            .fontColor(AppConstants.COLOR_PRIMARY)
+            .borderRadius(12)
+            .padding({ left: 12, right: 12 })
+            .onClick(() => router.pushUrl({ url: AppConstants.ROUTE_LOGIN }))
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8, bottom: 10 })
+        .backgroundColor(AppConstants.COLOR_PRIMARY)
+      }
+
       Tabs({
         barPosition: BarPosition.End,
         controller: this.tabsController,
@@ -61,11 +75,13 @@ struct JobSeekerMainPage {
         TabContent() { JobSeekerCommunityTab() }
           .tabBar(this.TabItemBuilder('社区', 2))
 
-        TabContent() { JobSeekerMessagesTab() }
-          .tabBar(this.TabItemBuilder('消息', 3))
+        if (!AppState.isGuest) {
+          TabContent() { JobSeekerMessagesTab() }
+            .tabBar(this.TabItemBuilder('消息', 3))
 
-        TabContent() { JobSeekerProfileTab() }
-          .tabBar(this.TabItemBuilder('我的', 4))
+          TabContent() { JobSeekerProfileTab() }
+            .tabBar(this.TabItemBuilder('我的', 4))
+        }
       }
       .barHeight(56)
       .barBackgroundColor('#FFFFFF')

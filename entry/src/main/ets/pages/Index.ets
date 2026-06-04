@@ -19,7 +19,12 @@ struct Index {
       AppState.currentUser = loggedInUser
       AppState.isLoggedIn = true
       AppState.isGuest = false
-      this.navigateToMain(loggedInUser.role)
+      if (loggedInUser.role === UserRole.JOB_SEEKER && !loggedInUser.studentType) {
+        // 已登录但未设置身份类型，跳转到身份选择
+        router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
+      } else {
+        this.navigateToMain(loggedInUser.role)
+      }
     }
   }
 

@@ -137,7 +137,9 @@ CREATE TABLE IF NOT EXISTS ${TABLE_APPLICATION} (
   status TEXT DEFAULT 'submitted',
   apply_time INTEGER,
   interview_time INTEGER,
-  remark TEXT
+  remark TEXT,
+  rejection_reason TEXT,
+  view_time INTEGER
 )`
 
 // 微任务表
@@ -256,6 +258,26 @@ CREATE TABLE IF NOT EXISTS ${TABLE_POST_COMMENT} (
   create_time INTEGER
 )`
 
+// 用户偏好设置表
+export const TABLE_USER_SETTING = 'tb_user_setting'
+export const CREATE_TABLE_USER_SETTING = `
+CREATE TABLE IF NOT EXISTS ${TABLE_USER_SETTING} (
+  user_id TEXT PRIMARY KEY,
+  ai_agent_enabled INTEGER DEFAULT 0,
+  auto_translate_resume INTEGER DEFAULT 0,
+  update_time INTEGER
+)`
+
+// 短信验证码表
+export const TABLE_VERIFY_CODE = 'tb_verify_code'
+export const CREATE_TABLE_VERIFY_CODE = `
+CREATE TABLE IF NOT EXISTS ${TABLE_VERIFY_CODE} (
+  phone TEXT PRIMARY KEY,
+  code TEXT NOT NULL,
+  expire_time INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+)`
+
 export const ALL_CREATE_TABLES: string[] = [
   CREATE_TABLE_USER,
   CREATE_TABLE_RESUME,
@@ -271,5 +293,7 @@ export const ALL_CREATE_TABLES: string[] = [
   CREATE_TABLE_COMPANY,
   CREATE_TABLE_CAREER_TALK,
   CREATE_TABLE_COMMUNITY_POST,
-  CREATE_TABLE_POST_COMMENT
+  CREATE_TABLE_POST_COMMENT,
+  CREATE_TABLE_USER_SETTING,
+  CREATE_TABLE_VERIFY_CODE
 ]

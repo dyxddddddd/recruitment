@@ -4,11 +4,82 @@ import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { UserRole } from '../../model/UserModel'
 import { UserDao } from '../../service/UserDao'
+import { ResumeDao } from '../../service/ResumeDao'
+import { ResumeInfo } from '../../model/ResumeModel'
+
+export interface ProfileCompletenessResult {
+  score: number
+  missingFields: string[]
+  tip: string
+}
+
+export interface FieldCheckItem {
+  name: string
+  ok: boolean
+}
 
 @Component
 export struct JobSeekerProfileTab {
-  @State showContractReview: boolean = false
   private userDao: UserDao = new UserDao()
+  private resumeDao: ResumeDao = new ResumeDao()
+  @State profileCompleteness: number = 0
+  @State missingFields: string[] = []
+  @State completenessTip: string = ''
+
+  aboutToAppear(): void {
+    this.loadCompleteness()
+  }
+
+  async loadCompleteness(): Promise<void> {
+    if (!AppState.currentUser) return
+    const resume = await this.resumeDao.getResumeByUserId(AppState.currentUser.userId)
+    const result = this.computeProfileCompleteness(resume)
+    this.profileCompleteness = result.score
+    this.missingFields = result.missingFields
+    this.completenessTip = result.tip
+  }
+
+  computeProfileCompleteness(resume: ResumeInfo | null): ProfileCompletenessResult {
+    const f1: FieldCheckItem = { name: '姓名', ok: resume?.realName !== undefined && resume?.realName !== '' }
+    const f2: FieldCheckItem = { name: '学校', ok: resume?.school !== undefined && resume?.school !== '' }
+    const f3: FieldCheckItem = { name: '专业', ok: resume?.major !== undefined && resume?.major !== '' }
+    const f4: FieldCheckItem = { name: '电话', ok: resume?.phone !== undefined && resume?.phone !== '' }
+    const f5: FieldCheckItem = { name: '教育经历', ok: resume?.educationList !== undefined && resume?.educationList.length > 0 }
+    const f6: FieldCheckItem = { name: '工作经历', ok: resume?.experienceList !== undefined && resume?.experienceList.length > 0 }
+    const fields: FieldCheckItem[] = [f1, f2, f3, f4, f5, f6]
+    let filledCount = 0
+    for (let i = 0; i < fields.length; i++) {
+      if (fields[i].ok) { filledCount++ }
+    }
+    const score = Math.round((filledCount / fields.length) * 100)
+    const missing: string[] = []
+    for (let i = 0; i < fields.length; i++) {
+      if (!fields[i].ok) { missing.push(fields[i].name) }
+    }
+    const tip = score >= 80
+      ? '简历完整度很高，继续保持！'
+      : score >= 50
+      ? '完善简历可提升 200% 的曝光率'
+      : '基础信息还未填完，快去完善简历吧'
+    return { score: score, missingFields: missing, tip: tip }
+  }
+
+  getCompletenessColor(score: number): string {
+    return score >= 60 ? '#52C41A' : score >= 40 ? '#FAAD14' : '#FF4D4F'
+  }
+
+  guardLogin(message: string): boolean {
+    if (AppState.isGuest) {
+      AlertDialog.show({
+        title: '登录提示',
+        message: message + '，是否前往登录？',
+        primaryButton: { value: '去登录', action: () => router.pushUrl({ url: AppConstants.ROUTE_LOGIN }) },
+        secondaryButton: { value: '取消', action: () => {} }
+      })
+      return true
+    }
+    return false
+  }
 
   build() {
     Column() {
@@ -43,12 +114,77 @@ export struct JobSeekerProfileTab {
         .width('100%')
         .margin({ bottom: 12 })
 
+        // 简历完善度引导
+        Column() {
+          Row() {
+            Text('简历完善度')
+              .fontSize(13)
+              .fontColor('#666666')
+            Blank()
+            Text(`${this.profileCompleteness}%`)
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.getCompletenessColor(this.profileCompleteness))
+            Text('  ' + this.completenessTip)
+              .fontSize(11)
+              .fontColor('#999999')
+          }
+          .width('100%')
+          .margin({ bottom: 8 })
+
+          Stack() {
+            Column() {
+              Row() {
+                Divider()
+                  .height(6)
+                  .width(`${this.profileCompleteness}%`)
+                  .backgroundColor(this.getCompletenessColor(this.profileCompleteness))
+                  .borderRadius(3)
+                Blank()
+              }
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .height(6)
+          .backgroundColor('#F0F0F0')
+          .borderRadius(3)
+          .clip(true)
+          .onClick(() => {
+            if (!this.guardLogin('管理简历需要登录')) {
+              router.pushUrl({ url: AppConstants.ROUTE_RESUME_EDIT })
+            }
+          })
+
+          if (this.missingFields.length > 0) {
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(this.missingFields, (field: string) => {
+                Text('缺少：' + field)
+                  .fontSize(11)
+                  .fontColor('#FF6B35')
+                  .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                  .backgroundColor('#FFF8F0')
+                  .borderRadius(10)
+                  .margin({ right: 6, bottom: 4 })
+              })
+            }
+            .width('100%')
+            .margin({ top: 8 })
+          }
+        }
+        .width('100%')
+        .padding(14)
+        .backgroundColor('#FFFCF5')
+        .borderRadius(12)
+        .margin({ bottom: 12 })
+        .border({ width: 1, color: '#FFF0E0' })
+
         // 快捷统计
         Row() {
-          this.StatItemBuilder('投递数', '12')
-          this.StatItemBuilder('面试数', '3')
-          this.StatItemBuilder('收藏', '8')
-          this.StatItemBuilder('微任务', '5')
+          this.StatItemBuilder('投递数', '0')
+          this.StatItemBuilder('面试数', '0')
+          this.StatItemBuilder('收藏', '0')
+          this.StatItemBuilder('微任务', '0')
         }
         .width('100%')
         .justifyContent(FlexAlign.SpaceAround)
@@ -65,65 +201,76 @@ export struct JobSeekerProfileTab {
           Column() {
             this.MenuItemBuilder('📝', '我的简历', '管理你的在线简历')
           }
-          .onClick(() => router.pushUrl({ url: AppConstants.ROUTE_RESUME_EDIT }))
         }
+        .onClick(() => {
+          if (!this.guardLogin('管理简历需要登录')) {
+            router.pushUrl({ url: AppConstants.ROUTE_RESUME_EDIT })
+          }
+        })
 
         ListItem() {
-          this.MenuItemBuilder('📅', '我的课表', '导入课表，匹配弹性工时')
+          Column() {
+            this.MenuItemBuilder('📅', '我的课表', '导入课表，匹配弹性工时')
+          }
         }
+        .onClick(() => {
+          if (!this.guardLogin('导入课表需要登录')) {
+            router.pushUrl({ url: AppConstants.ROUTE_RESUME_EDIT })
+          }
+        })
 
         ListItem() {
-          this.MenuItemBuilder('📊', '投递记录', '查看所有投递状态')
+          Column() {
+            this.MenuItemBuilder('📊', '投递记录', '查看所有投递状态')
+          }
         }
+        .onClick(() => {
+          if (!this.guardLogin('查看投递记录需要登录')) {
+            router.pushUrl({ url: AppConstants.ROUTE_APPLICATION_TRACK })
+          }
+        })
 
         ListItem() {
-          this.MenuItemBuilder('🤖', 'AI 招聘助手', '职场领航员，简历精修建议')
+          Column() {
+            this.MenuItemBuilder('🤖', 'AI 招聘助手', '职场领航员，简历精修建议')
+          }
         }
+        .onClick(() => {
+          if (!this.guardLogin('唤醒AI招聘助手需要登录')) {
+            router.pushUrl({ url: AppConstants.ROUTE_AI_ASSISTANT })
+          }
+        })
+
+        ListItem() {
+          Column() {
+            this.MenuItemBuilder('🧠', 'AI 数字分身', '设置自动代聊底线与可用时间')
+          }
+        }
+        .onClick(() => {
+          if (!this.guardLogin('管理AI数字分身需要登录')) {
+            router.pushUrl({ url: AppConstants.ROUTE_AI_DIGITAL_TWIN })
+          }
+        })
 
         ListItem() {
           Column() {
             this.MenuItemBuilder('📋', '三方协议AI审查', '拍照上传，自动识别合同陷阱')
           }
-          .onClick(() => this.showContractReview = !this.showContractReview)
         }
-
-        // 创新点九：三方协议审查
-        if (this.showContractReview) {
-          ListItem() {
-            Column() {
-              Text('三方协议/劳动合同审查')
-                .fontSize(14)
-                .fontWeight(FontWeight.Medium)
-                .margin({ bottom: 12 })
-              Column() {
-                Image($r('sys.symbol.doc_text'))
-                  .width(40)
-                  .height(40)
-                  .fillColor('#4A90D9')
-                  .margin({ bottom: 8 })
-                Text('拍照上传三方协议')
-                  .fontSize(13)
-                  .fontColor('#4A90D9')
-              }
-              .width('100%')
-              .height(120)
-              .backgroundColor('#F0F7FF')
-              .borderRadius(8)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-              .margin({ bottom: 12 })
-              Text('法务大模型将在3秒内输出体检报告')
-                .fontSize(11)
-                .fontColor('#999999')
-            }
-            .width('100%')
-            .padding(12)
+        .onClick(() => {
+          if (!this.guardLogin('三方协议审查需要登录')) {
+            router.pushUrl({ url: AppConstants.ROUTE_CONTRACT_REVIEW })
           }
-        }
+        })
 
         ListItem() {
-          this.MenuItemBuilder('⚙️', '设置', '账号安全、隐私设置')
+          Column() {
+            this.MenuItemBuilder('⚙️', '设置', '账号安全、隐私设置')
+          }
         }
+        .onClick(() => {
+          this.guardLogin('设置需要登录')
+        })
 
         if (!AppState.isGuest) {
           ListItem() {
