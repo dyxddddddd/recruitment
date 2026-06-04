@@ -1,5 +1,3 @@
-// 招聘者 - 消息页（Tab d: 消息 + AI分身标识）
-
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { ChatSession } from '../../model/MessageModel'
@@ -15,9 +13,22 @@ export struct RecruiterMessagesTab {
   }
 
   async loadSessions(): Promise<void> {
-    if (AppState.currentUser) {
-      this.sessions = await this.messageDao.getSessions(AppState.currentUser.userId)
+    if (!AppState.currentUser) {
+      this.sessions = []
+      return
     }
+    this.sessions = await this.messageDao.getSessions(AppState.currentUser.userId)
+  }
+
+  openSession(session: ChatSession): void {
+    router.pushUrl({
+      url: AppConstants.ROUTE_CHAT,
+      params: {
+        sessionId: session.sessionId,
+        peerName: session.peerName,
+        isAIAgent: session.isAIAgent
+      }
+    })
   }
 
   build() {
@@ -36,13 +47,13 @@ export struct RecruiterMessagesTab {
 
       if (this.sessions.length === 0) {
         Column() {
-          Text('📨')
+          Text('📠')
             .fontSize(48)
             .margin({ bottom: 12 })
           Text('暂无消息')
             .fontSize(14)
             .fontColor('#999999')
-          Text('当有学生投递简历或咨询时，沟通将显示在这里')
+          Text('当有学生投递简历或咨询时，沟通会显示在这里')
             .fontSize(12)
             .fontColor('#CCCCCC')
             .textAlign(TextAlign.Center)
@@ -67,9 +78,8 @@ export struct RecruiterMessagesTab {
                       .fontWeight(FontWeight.Medium)
                       .fontColor('#1A1A1A')
 
-                    // 创新点六：AI数字分身标识
                     if (session.isAIAgent) {
-                      Text('🤖 AI分身')
+                      Text('AI分身')
                         .fontSize(9)
                         .fontColor(AppConstants.COLOR_AI_PURPLE)
                         .padding({ left: 4, right: 4, top: 1, bottom: 1 })
@@ -94,10 +104,23 @@ export struct RecruiterMessagesTab {
                   .width('100%')
                   .margin({ bottom: 4 })
 
-                  Text(session.lastMessage)
-                    .fontSize(13)
-                    .fontColor(session.isAIAgent ? AppConstants.COLOR_AI_PURPLE : '#999999')
-                    .maxLines(1)
+                  Row() {
+                    Text(session.lastMessage)
+                      .fontSize(13)
+                      .fontColor(session.isAIAgent ? AppConstants.COLOR_AI_PURPLE : '#999999')
+                      .maxLines(1)
+                      .layoutWeight(1)
+
+                    if (session.unreadCount > 0) {
+                      Text(`${session.unreadCount}`)
+                        .fontSize(10)
+                        .fontColor('#FFFFFF')
+                        .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                        .backgroundColor('#FF4D4F')
+                        .borderRadius(8)
+                    }
+                  }
+                  .width('100%')
                 }
                 .layoutWeight(1)
               }
@@ -105,6 +128,7 @@ export struct RecruiterMessagesTab {
               .padding({ top: 14, bottom: 14 })
               .border({ width: { bottom: 0.5 }, color: '#F0F0F0' })
             }
+            .onClick(() => this.openSession(session))
           })
         }
         .width('100%')

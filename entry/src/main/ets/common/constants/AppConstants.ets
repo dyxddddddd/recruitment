@@ -5,7 +5,7 @@ export class AppConstants {
   static readonly BACKEND_BASE_URL = 'http://10.0.2.2:8080'
   static readonly DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
   static readonly DEEPSEEK_MODEL = 'deepseek-chat'
-  static readonly DEEPSEEK_API_KEY = ''
+  static readonly DEEPSEEK_API_KEY = 'sk-eb8ad2c97cb2406d9d5bf5a7a51d3717'
 
   static readonly ROLE_JOB_SEEKER = 'job_seeker'
   static readonly ROLE_RECRUITER = 'recruiter'

@@ -34,6 +34,7 @@ struct ChatPage {
       this.isAIAgentSession = true
     }
     this.messages = await this.messageDao.getMessages(this.sessionId)
+    await this.messageDao.markSessionRead(this.sessionId)
     await this.maybeGenerateAIAgentReply()
     this.scrollToBottom()
   }
@@ -54,7 +55,7 @@ struct ChatPage {
     }
     this.messages.push(message)
     this.inputText = ''
-    await this.messageDao.insertMessage(message)
+    await this.messageDao.insertConversationMessage(message)
     this.scrollToBottom()
   }
 
@@ -99,7 +100,8 @@ struct ChatPage {
         isRead: true
       }
       this.messages.push(reply)
-      await this.messageDao.insertMessage(reply)
+      await this.messageDao.insertConversationMessage(reply)
+      this.scrollToBottom()
     } catch (e) {
       // keep chat available even if AI reply fails
     }

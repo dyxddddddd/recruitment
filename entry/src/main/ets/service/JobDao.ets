@@ -147,6 +147,21 @@ export class JobDao {
     return apps
   }
 
+  async getApplicationByUserAndJob(userId: string, jobId: string): Promise<JobApplication | null> {
+    const store = await this.helper.getStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_APPLICATION)
+    predicates.equalTo('user_id', userId)
+    predicates.equalTo('job_id', jobId)
+    const rs = await store.query(predicates)
+    if (rs.goToFirstRow()) {
+      const app = this.rowToApplication(rs)
+      rs.close()
+      return app
+    }
+    rs.close()
+    return null
+  }
+
   // ---- 微任务操作 ----
 
   async insertMicroTask(task: MicroTask): Promise<void> {
