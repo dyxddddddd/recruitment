@@ -1,7 +1,7 @@
 // 数据库表结构定义
 
 export const DATABASE_NAME = 'UniCampus.db'
-export const DATABASE_VERSION = 5
+export const DATABASE_VERSION = 6
 
 // 用户表
 export const TABLE_USER = 'tb_user'
@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_CHAT_MESSAGE} (
   message_id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   sender_id TEXT NOT NULL,
+  receiver_id TEXT,
   content TEXT,
   timestamp INTEGER,
   is_ai_agent_reply INTEGER DEFAULT 0,

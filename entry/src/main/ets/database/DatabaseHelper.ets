@@ -41,6 +41,7 @@ export class DatabaseHelper {
     await this.migrateV2ToV3()
     await this.migrateV3ToV4()
     await this.migrateV4ToV5()
+    await this.migrateV5ToV6()
     await DemoDataInitializer.seed(this.store)
 
     return this.store
@@ -98,6 +99,15 @@ export class DatabaseHelper {
         await this.store.executeSql(alterSqlList[i])
       } catch (e) {
       }
+    }
+  }
+
+  private async migrateV5ToV6(): Promise<void> {
+    if (!this.store) return
+    try {
+      await this.store.executeSql('ALTER TABLE tb_chat_message ADD COLUMN receiver_id TEXT')
+    } catch (e) {
+      // column may already exist
     }
   }
 

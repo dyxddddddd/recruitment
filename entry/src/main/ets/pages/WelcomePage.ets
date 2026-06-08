@@ -39,6 +39,7 @@ struct WelcomePage {
   navigateToNext(): void {
     this.isLoading = false
     AppState.agreementAccepted = true
+    AppStorage.setOrCreate('agreement_accepted', true)
     router.replaceUrl({ url: AppConstants.ROUTE_INDEX })
   }
 

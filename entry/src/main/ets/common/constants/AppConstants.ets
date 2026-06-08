@@ -4,7 +4,9 @@ export class AppConstants {
   static readonly APP_NAME = '校招护航'
   static readonly APP_SUBTITLE = 'Uni-Campus'
 
-  static readonly BACKEND_BASE_URL = 'http://10.0.2.2:8080'
+
+  static readonly BACKEND_BASE_URL = 'http://10.0.2.2:8088'
+  static readonly WS_URL = 'ws://10.0.2.2:8088/ws'
   static readonly DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
   static readonly DEEPSEEK_MODEL = 'deepseek-chat'
   static readonly DEEPSEEK_API_KEY = 'sk-eb8ad2c97cb2406d9d5bf5a7a51d3717'

@@ -125,17 +125,12 @@ export class DemoDataInitializer {
   }
 
   private static async seedUsers(store: relationalStore.RdbStore, now: number): Promise<void> {
+    // 学生端演示账号
     await store.executeSql(
       `INSERT OR IGNORE INTO ${TABLE_USER}
-      (user_id, phone, role, student_type, real_name, school, major, expected_position, expected_salary, is_guest, password, create_time, update_time, is_login)
+      (user_id, phone, role, student_type, real_name, gender, school, major, education, expected_position, expected_salary, is_guest, password, create_time, update_time, is_login)
       VALUES
-      ('student_demo_001', '13800138000', 'job_seeker', 'current', '校园同学', 'Central South University', 'Software Engineering', 'Frontend Intern', '6000', 0, '123456', ${now}, ${now}, 0)`
-    )
-    await store.executeSql(
-      `INSERT OR IGNORE INTO ${TABLE_USER}
-      (user_id, phone, role, company_name, vip_level, position_count, hr_real_name, is_guest, password, create_time, update_time, is_login)
-      VALUES
-      ('recruiter_demo_001', '13900139000', 'recruiter', 'Xiaomi Group', 'normal', 0, 'Campus HR', 0, '123456', ${now}, ${now}, 0)`
+      ('student_demo_001', '13800138000', 'job_seeker', 'current', '校园同学', 'male', '中南大学', '软件工程', '本科', '前端开发实习', '6000', 0, '123456', ${now}, ${now}, 0)`
     )
     await store.executeSql(
       `INSERT OR IGNORE INTO ${TABLE_USER}
@@ -143,6 +138,40 @@ export class DemoDataInitializer {
       VALUES
       ('student_demo_002', '13800001234', 'job_seeker', 0, '123456', ${now}, ${now}, 0)`
     )
+
+    // ========== 企业端演示账号 ==========
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_USER}
+      (user_id, phone, role, company_name, vip_level, position_count, hr_real_name, is_guest, password, create_time, update_time, is_login)
+      VALUES
+      ('recruiter_demo_001', '13900139000', 'recruiter', '小米集团', 'normal', 0, '董雨欣', 0, '123456', ${now}, ${now}, 0)`
+    )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_USER}
+      (user_id, phone, role, company_name, vip_level, position_count, hr_real_name, is_guest, password, create_time, update_time, is_login)
+      VALUES
+      ('recruiter_demo_002', '13800000001', 'recruiter', '字节跳动', 'normal', 0, '张HR', 0, '123456', ${now}, ${now}, 0)`
+    )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_USER}
+      (user_id, phone, role, company_name, vip_level, position_count, hr_real_name, is_guest, password, create_time, update_time, is_login)
+      VALUES
+      ('recruiter_demo_003', '13800000002', 'recruiter', '华为技术', 'vip', 0, '李HR', 0, '123456', ${now}, ${now}, 0)`
+    )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_USER}
+      (user_id, phone, role, company_name, vip_level, position_count, hr_real_name, is_guest, password, create_time, update_time, is_login)
+      VALUES
+      ('recruiter_demo_004', '13800000003', 'recruiter', '蓝湖传媒', 'normal', 0, '王HR', 0, '123456', ${now}, ${now}, 0)`
+    )
+
+    // 强制同步演示账号密码（每次启动都执行，确保登录可用）
+    const demoIds = ['student_demo_001', 'student_demo_002', 'recruiter_demo_001', 'recruiter_demo_002', 'recruiter_demo_003', 'recruiter_demo_004']
+    for (let i = 0; i < demoIds.length; i++) {
+      await store.executeSql(
+        `UPDATE ${TABLE_USER} SET password = '123456', update_time = ${now} WHERE user_id = '${demoIds[i]}'`
+      )
+    }
   }
 
   private static async resetSeedJobs(store: relationalStore.RdbStore): Promise<void> {

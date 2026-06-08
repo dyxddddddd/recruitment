@@ -1,28 +1,138 @@
 import { router } from '@kit.ArkUI'
-import { AppConstants } from '../../common/constants/AppConstants'
-import { EducationItem, ExperienceItem, ResumeInfo } from '../../model/ResumeModel'
+import { AppConstants, AppState } from '../../common/constants/AppConstants'
+import { EducationItem, ExperienceItem, CourseSchedule, ResumeInfo, FreeTimeSlot } from '../../model/ResumeModel'
 import { ResumeDao } from '../../service/ResumeDao'
+import { UserDao } from '../../service/UserDao'
+import { UserProfile, StudentType } from '../../model/UserModel'
+import { buildConversationId } from '../../model/MessageModel'
 
 @Entry
 @Component
 struct TalentDetailPage {
   @State resume: ResumeInfo | null = null
+  @State schedule: CourseSchedule | null = null
+  @State studentUser: UserProfile | null = null
   @State showAIInterview: boolean = false
+  @State isLoading: boolean = true
+  @State loadError: boolean = false
   private resumeDao: ResumeDao = new ResumeDao()
+  private userDao: UserDao = new UserDao()
+  private userId: string = ''
 
   async aboutToAppear(): Promise<void> {
     const params = router.getParams() as Record<string, Object>
-    const userId = params['userId'] as string
-    if (userId) {
-      this.resume = await this.resumeDao.getResumeByUserId(userId)
+    this.userId = (params['userId'] as string) || ''
+    if (this.userId) {
+      await this.loadData()
+    } else {
+      this.isLoading = false
+      this.loadError = true
     }
+  }
+
+  async loadData(): Promise<void> {
+    this.isLoading = true
+    try {
+      this.resume = await this.resumeDao.getResumeByUserId(this.userId)
+      this.schedule = await this.resumeDao.getScheduleByUserId(this.userId)
+      this.studentUser = await this.userDao.getUserById(this.userId)
+    } catch (e) {
+      // resume may not exist, which is ok
+    }
+    this.isLoading = false
+  }
+
+  handleStartChat(): void {
+    if (!this.studentUser || !AppState.currentUser) {
+      return
+    }
+    const conversationId = buildConversationId(AppState.currentUser.userId, this.studentUser.userId)
+    router.pushUrl({
+      url: AppConstants.ROUTE_CHAT,
+      params: {
+        conversationId: conversationId,
+        peerName: this.studentUser.realName || '候选人',
+        isAIAgent: false
+      }
+    })
+  }
+
+  getStudentTypeLabel(): string {
+    if (!this.studentUser || !this.studentUser.studentType) {
+      return ''
+    }
+    return this.studentUser.studentType === StudentType.GRADUATING ? '应届生' : '在校生'
+  }
+
+  getStudentTypeColor(): string {
+    if (!this.studentUser || !this.studentUser.studentType) {
+      return '#666666'
+    }
+    return this.studentUser.studentType === StudentType.GRADUATING ? '#4A90D9' : '#52C41A'
+  }
+
+  getDisplayName(): string {
+    if (this.resume && this.resume.realName) {
+      return this.resume.realName
+    }
+    if (this.studentUser && this.studentUser.realName) {
+      return this.studentUser.realName
+    }
+    return '未填写姓名'
+  }
+
+  getDisplaySchool(): string {
+    return this.resume?.school || this.studentUser?.school || '学校待完善'
+  }
+
+  getDisplayMajor(): string {
+    return this.resume?.major || this.studentUser?.major || '专业待完善'
+  }
+
+  getDisplayEducation(): string {
+    return this.resume?.education || this.studentUser?.education || '学历待完善'
+  }
+
+  getDisplayPhone(): string {
+    return this.resume?.phone || this.studentUser?.phone || '手机号待完善'
+  }
+
+  getDisplayEmail(): string {
+    return this.resume?.email || ''
+  }
+
+  getDisplayCity(): string {
+    return this.resume?.currentCity || this.studentUser?.currentCity || '城市待完善'
+  }
+
+  getDisplayPosition(): string {
+    return this.resume?.expectedPosition || this.studentUser?.expectedPosition || '意向岗位待补充'
+  }
+
+  getDisplaySalary(): string {
+    if (this.resume && this.resume.expectedSalary) {
+      return this.resume.expectedSalary
+    }
+    if (this.studentUser && this.studentUser.expectedSalary) {
+      return this.studentUser.expectedSalary
+    }
+    return '意向薪资待补充'
+  }
+
+  getFreeSlotSummary(): string {
+    if (!this.schedule || this.schedule.freeSlots.length === 0) {
+      return ''
+    }
+    const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const slots = this.schedule.freeSlots.slice(0, 4)
+    return slots.map((s) => s.label).join('；')
   }
 
   build() {
     Column() {
       this.PageHeader()
 
-      if (!this.resume) {
+      if (this.isLoading) {
         Column() {
           LoadingProgress()
             .width(28)
@@ -36,6 +146,18 @@ struct TalentDetailPage {
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
+      } else if (this.loadError) {
+        Column() {
+          Text('😕')
+            .fontSize(48)
+            .margin({ bottom: 12 })
+          Text('无法加载候选人信息')
+            .fontSize(14)
+            .fontColor('#999999')
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
       } else {
         Scroll() {
           Column() {
@@ -44,6 +166,7 @@ struct TalentDetailPage {
             this.EducationCard()
             this.ExperienceCard()
             this.SkillCard()
+            this.ScheduleCard()
             this.IntroCard()
             this.InterviewCard()
             this.ActionBar()
@@ -53,6 +176,7 @@ struct TalentDetailPage {
         }
         .layoutWeight(1)
         .backgroundColor('#F4F6FB')
+        .scrollBar(BarState.Off)
       }
     }
     .width('100%')
@@ -105,75 +229,87 @@ struct TalentDetailPage {
 
   @Builder
   HeroCard() {
-    if (this.resume) {
-      Column() {
-        Row() {
-          Column() {
-            Text(this.resume.realName || '未填写姓名')
+    Column() {
+      Row() {
+        Column() {
+          Row() {
+            Text(this.getDisplayName())
               .fontSize(26)
               .fontWeight(FontWeight.Bold)
               .fontColor('#1A1A1A')
-
-            Text([
-              this.resume.school || '学校待完善',
-              this.resume.major || '专业待完善',
-              this.resume.education || '学历待完善'
-            ].join(' · '))
-              .fontSize(12)
-              .fontColor('#667085')
-              .margin({ top: 8 })
-
-            Text([
-              this.resume.phone || '手机号待完善',
-              this.resume.email || '邮箱待完善',
-              this.resume.currentCity || '城市待完善'
-            ].join(' · '))
-              .fontSize(11)
-              .fontColor('#98A2B3')
-              .margin({ top: 8 })
+            if (this.getStudentTypeLabel()) {
+              Text(this.getStudentTypeLabel())
+                .fontSize(10)
+                .fontColor('#FFFFFF')
+                .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                .backgroundColor(this.getStudentTypeColor())
+                .borderRadius(10)
+                .margin({ left: 8 })
+            }
           }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
 
-          Stack() {
-            Circle()
-              .width(72)
-              .height(72)
-              .fill('#FFF3EE')
-            Text('简历')
-              .fontSize(18)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(AppConstants.COLOR_ACCENT)
-          }
+          Text([
+            this.getDisplaySchool(),
+            this.getDisplayMajor(),
+            this.getDisplayEducation()
+          ].join(' · '))
+            .fontSize(12)
+            .fontColor('#667085')
+            .margin({ top: 8 })
+
+          Text([
+            this.getDisplayPhone(),
+            this.getDisplayEmail(),
+            this.getDisplayCity()
+          ].filter(s => s && !s.includes('待完善')).join(' · ') || '联系方式待完善')
+            .fontSize(11)
+            .fontColor('#98A2B3')
+            .margin({ top: 8 })
         }
-        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
 
-        Flex({ wrap: FlexWrap.Wrap }) {
-          this.HeaderBadge(this.resume.expectedPosition || '待补充意向岗位', '#EEF5FF', '#2E6FD8')
-          this.HeaderBadge(this.resume.expectedSalary || '待补充意向薪资', '#FFF3EE', AppConstants.COLOR_ACCENT)
-          if (this.resume.hasSchedule) {
-            this.HeaderBadge('课表空闲时段已同步', '#EDF9F1', '#279255')
-          }
-        }
-        .width('100%')
-        .margin({ top: 18 })
-
-        if (this.resume.selfIntro.trim()) {
-          Text(this.resume.selfIntro)
-            .fontSize(13)
-            .fontColor('#3E4C5A')
-            .lineHeight(22)
-            .width('100%')
-            .margin({ top: 16 })
+        Stack() {
+          Circle()
+            .width(72)
+            .height(72)
+            .fill('#FFF3EE')
+          Text('简历')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(AppConstants.COLOR_ACCENT)
         }
       }
       .width('100%')
-      .padding(20)
-      .backgroundColor('#FFFFFF')
-      .borderRadius(24)
-      .shadow({ radius: 18, color: '#12000000', offsetY: 8 })
-      .margin({ top: -18 })
+
+      Flex({ wrap: FlexWrap.Wrap }) {
+        this.HeaderBadge(this.getDisplayPosition(), '#EEF5FF', '#2E6FD8')
+        this.HeaderBadge(this.getDisplaySalary(), '#FFF3EE', AppConstants.COLOR_ACCENT)
+        if (this.resume && this.resume.hasSchedule) {
+          this.HeaderBadge('课表空闲已同步', '#EDF9F1', '#279255')
+        }
+        if (this.resume && this.resume.isFromPDF) {
+          this.HeaderBadge('简历解析', '#F9F0FF', AppConstants.COLOR_AI_PURPLE)
+        }
+      }
+      .width('100%')
+      .margin({ top: 18 })
+
+      if (this.resume && this.resume.selfIntro.trim()) {
+        Text(this.resume.selfIntro)
+          .fontSize(13)
+          .fontColor('#3E4C5A')
+          .lineHeight(22)
+          .width('100%')
+          .margin({ top: 16 })
+      }
     }
+    .width('100%')
+    .padding(20)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(24)
+    .shadow({ radius: 18, color: '#12000000', offsetY: 8 })
+    .margin({ top: -18 })
   }
 
   @Builder
@@ -189,16 +325,20 @@ struct TalentDetailPage {
 
   @Builder
   SummaryGrid() {
-    if (this.resume) {
-      Row() {
-        this.MetricCard('匹配亮点', this.resume.skills.length > 0 ? `${this.resume.skills.length} 项技能` : '待补充', '#EEF5FF', '#2E6FD8')
-        this.MetricCard('教育记录', this.resume.educationList.length > 0 ? `${this.resume.educationList.length} 段` : '暂无', '#FFF3EE', AppConstants.COLOR_ACCENT)
-        this.MetricCard('实践经历', this.resume.experienceList.length > 0 ? `${this.resume.experienceList.length} 段` : '暂无', '#EDF9F1', '#279255')
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.SpaceBetween)
-      .margin({ top: 14, bottom: 14 })
+    Row() {
+      this.MetricCard('技能项',
+        this.resume && this.resume.skills.length > 0 ? `${this.resume.skills.length} 项` : '暂无',
+        '#EEF5FF', '#2E6FD8')
+      this.MetricCard('教育记录',
+        this.resume && this.resume.educationList.length > 0 ? `${this.resume.educationList.length} 段` : '暂无',
+        '#FFF3EE', AppConstants.COLOR_ACCENT)
+      this.MetricCard('实践经历',
+        this.resume && this.resume.experienceList.length > 0 ? `${this.resume.experienceList.length} 段` : '暂无',
+        '#EDF9F1', '#279255')
     }
+    .width('100%')
+    .justifyContent(FlexAlign.SpaceBetween)
+    .margin({ top: 14, bottom: 14 })
   }
 
   @Builder
@@ -259,6 +399,19 @@ struct TalentDetailPage {
   }
 
   @Builder
+  ScheduleCard() {
+    Column() {
+      this.CardHeader('空闲时段', '基于课表同步的可面试时间')
+      this.ScheduleSection()
+    }
+    .width('100%')
+    .padding(18)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(22)
+    .margin({ bottom: 14 })
+  }
+
+  @Builder
   IntroCard() {
     Column() {
       this.CardHeader('个人介绍', '帮助 HR 快速判断表达和方向感')
@@ -293,138 +446,163 @@ struct TalentDetailPage {
 
   @Builder
   EducationSection() {
-    if (this.resume) {
-      if (this.resume.educationList.length === 0) {
-        this.EmptyHint('候选人还没有补充教育经历。')
-      } else {
-        ForEach(this.resume.educationList, (item: EducationItem, index: number) => {
-          Row() {
-            Column() {
-              Circle()
-                .width(10)
-                .height(10)
-                .fill(AppConstants.COLOR_PRIMARY)
-              if (index < this.resume!.educationList.length - 1) {
-                Divider()
-                  .width(2)
-                  .height(52)
-                  .color('#D8E7FB')
-                  .margin({ top: 6 })
-              }
-            }
-            .width(16)
-
-            Column() {
-              Text(item.schoolName || '学校待完善')
-                .fontSize(14)
-                .fontWeight(FontWeight.Medium)
-                .fontColor('#1A1A1A')
-              Text(`${item.major || '专业待完善'} · ${item.degree || '学历待完善'}`)
-                .fontSize(12)
-                .fontColor('#667085')
-                .margin({ top: 4 })
-              Text(`${item.startYear || '起始时间待补充'} - ${item.endYear || '结束时间待补充'}`)
-                .fontSize(11)
-                .fontColor('#98A2B3')
+    if (this.resume && this.resume.educationList.length > 0) {
+      ForEach(this.resume.educationList, (item: EducationItem, index: number) => {
+        Row() {
+          Column() {
+            Circle()
+              .width(10)
+              .height(10)
+              .fill(AppConstants.COLOR_PRIMARY)
+            if (index < this.resume!.educationList.length - 1) {
+              Divider()
+                .width(2)
+                .height(52)
+                .color('#D8E7FB')
                 .margin({ top: 6 })
             }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-            .margin({ left: 12, bottom: 14 })
           }
-          .width('100%')
-          .alignItems(VerticalAlign.Top)
-        })
-      }
+          .width(16)
+
+          Column() {
+            Text(item.schoolName || '学校待完善')
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#1A1A1A')
+            Text(`${item.major || '专业待完善'} · ${item.degree || '学历待完善'}`)
+              .fontSize(12)
+              .fontColor('#667085')
+              .margin({ top: 4 })
+            Text(`${item.startYear || '起始'} - ${item.endYear || '至今'}`)
+              .fontSize(11)
+              .fontColor('#98A2B3')
+              .margin({ top: 6 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          .margin({ left: 12, bottom: 14 })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Top)
+      })
+    } else {
+      this.EmptyHint('候选人还没有补充教育经历。')
     }
   }
 
   @Builder
   ExperienceSection() {
-    if (this.resume) {
-      if (this.resume.experienceList.length === 0) {
-        this.EmptyHint('候选人还没有补充实习或项目经历。')
-      } else {
-        ForEach(this.resume.experienceList, (item: ExperienceItem) => {
-          Column() {
-            Row() {
-              Text(item.type === 'intern' ? '实习' : '项目')
-                .fontSize(10)
-                .fontColor('#FFFFFF')
-                .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-                .backgroundColor(item.type === 'intern' ? AppConstants.COLOR_PRIMARY : AppConstants.COLOR_ACCENT)
-                .borderRadius(10)
-              Text(item.companyName || item.projectName || '未命名经历')
-                .fontSize(14)
-                .fontWeight(FontWeight.Medium)
-                .fontColor('#1A1A1A')
-                .margin({ left: 8 })
-            }
-            .width('100%')
-
-            Text(item.role || '角色待完善')
-              .fontSize(12)
-              .fontColor('#43505E')
-              .margin({ top: 10 })
-              .width('100%')
-
-            Text(`${item.startTime || '开始时间待补充'} - ${item.endTime || '结束时间待补充'}`)
-              .fontSize(11)
-              .fontColor('#98A2B3')
-              .margin({ top: 6 })
-              .width('100%')
-
-            Text(item.translatedDescription || item.description || '经历描述待完善')
-              .fontSize(12)
-              .fontColor('#4C5665')
-              .lineHeight(21)
-              .margin({ top: 10 })
-              .width('100%')
+    if (this.resume && this.resume.experienceList.length > 0) {
+      ForEach(this.resume.experienceList, (item: ExperienceItem) => {
+        Column() {
+          Row() {
+            Text(item.type === 'intern' ? '实习' : '项目')
+              .fontSize(10)
+              .fontColor('#FFFFFF')
+              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+              .backgroundColor(item.type === 'intern' ? AppConstants.COLOR_PRIMARY : AppConstants.COLOR_ACCENT)
+              .borderRadius(10)
+            Text(item.companyName || item.projectName || '未命名经历')
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#1A1A1A')
+              .margin({ left: 8 })
           }
           .width('100%')
-          .padding(14)
-          .backgroundColor('#FAFBFD')
-          .borderRadius(16)
-          .margin({ bottom: 10 })
-        })
-      }
+
+          Text(item.role || '角色待完善')
+            .fontSize(12)
+            .fontColor('#43505E')
+            .margin({ top: 10 })
+            .width('100%')
+
+          Text(`${item.startTime || '开始时间待补充'} - ${item.endTime || '结束时间待补充'}`)
+            .fontSize(11)
+            .fontColor('#98A2B3')
+            .margin({ top: 6 })
+            .width('100%')
+
+          Text(item.translatedDescription || item.description || '经历描述待完善')
+            .fontSize(12)
+            .fontColor('#4C5665')
+            .lineHeight(21)
+            .margin({ top: 10 })
+            .width('100%')
+        }
+        .width('100%')
+        .padding(14)
+        .backgroundColor('#FAFBFD')
+        .borderRadius(16)
+        .margin({ bottom: 10 })
+      })
+    } else {
+      this.EmptyHint('候选人还没有补充实习或项目经历。')
     }
   }
 
   @Builder
   SkillSection() {
-    if (this.resume) {
-      if (this.resume.skills.length === 0) {
-        this.EmptyHint('候选人还没有整理技能关键词。')
-      } else {
-        Flex({ wrap: FlexWrap.Wrap }) {
-          ForEach(this.resume.skills, (skill: string) => {
-            Text(skill)
-              .fontSize(12)
-              .fontColor('#2E6FD8')
-              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .backgroundColor('#EEF5FF')
-              .borderRadius(16)
-              .margin({ right: 8, bottom: 8 })
-          })
+    if (this.resume && this.resume.skills.length > 0) {
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(this.resume.skills, (skill: string) => {
+          Text(skill)
+            .fontSize(12)
+            .fontColor('#2E6FD8')
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .backgroundColor('#EEF5FF')
+            .borderRadius(16)
+            .margin({ right: 8, bottom: 8 })
+        })
+      }
+      .width('100%')
+    } else {
+      this.EmptyHint('候选人还没有整理技能关键词。')
+    }
+  }
+
+  @Builder
+  ScheduleSection() {
+    if (this.schedule && this.schedule.freeSlots.length > 0) {
+      Column() {
+        ForEach(this.schedule.freeSlots, (slot: FreeTimeSlot) => {
+          Row() {
+            Circle()
+              .width(8)
+              .height(8)
+              .fill('#279255')
+            Text(slot.label)
+              .fontSize(13)
+              .fontColor('#3E4C5A')
+              .margin({ left: 10 })
+          }
+          .width('100%')
+          .margin({ bottom: 8 })
+        })
+
+        Row() {
+          Text('以上时段来自课表识别，建议优先安排面试。')
+            .fontSize(10)
+            .fontColor('#8B95A1')
         }
         .width('100%')
+        .margin({ top: 6 })
       }
+      .width('100%')
+    } else {
+      this.EmptyHint('候选人暂未同步课表空闲时段。建议提醒候选人通过学生端同步课表，方便安排面试时间。')
     }
   }
 
   @Builder
   IntroSection() {
-    if (this.resume) {
-      if (!this.resume.selfIntro.trim()) {
-        this.EmptyHint('候选人还没有填写个人介绍。')
-      } else {
-        Text(this.resume.selfIntro)
-          .fontSize(13)
-          .fontColor('#4C5665')
-          .lineHeight(22)
-          .width('100%')
-      }
+    if (this.resume && this.resume.selfIntro.trim()) {
+      Text(this.resume.selfIntro)
+        .fontSize(13)
+        .fontColor('#4C5665')
+        .lineHeight(22)
+        .width('100%')
+    } else {
+      this.EmptyHint('候选人还没有填写个人介绍。')
     }
   }
 
@@ -510,16 +688,27 @@ struct TalentDetailPage {
   ActionBar() {
     Row() {
       Button('暂不推进')
-        .width('46%')
+        .width('30%')
         .height(44)
-        .fontSize(14)
+        .fontSize(13)
         .backgroundColor('#FFFFFF')
         .fontColor('#667085')
         .borderRadius(22)
-      Button('发起面试')
-        .width('46%')
+        .border({ width: 1, color: '#E0E0E0' })
+
+      Button('发消息')
+        .width('30%')
         .height(44)
-        .fontSize(14)
+        .fontSize(13)
+        .backgroundColor(AppConstants.COLOR_PRIMARY)
+        .fontColor('#FFFFFF')
+        .borderRadius(22)
+        .onClick(() => this.handleStartChat())
+
+      Button('发起面试')
+        .width('30%')
+        .height(44)
+        .fontSize(13)
         .backgroundColor(AppConstants.COLOR_ACCENT)
         .fontColor('#FFFFFF')
         .borderRadius(22)

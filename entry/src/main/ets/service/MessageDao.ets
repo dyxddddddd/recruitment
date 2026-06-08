@@ -1,33 +1,134 @@
 import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper } from '../database/DatabaseHelper'
 import { TABLE_CHAT_MESSAGE, TABLE_CHAT_SESSION, TABLE_SYSTEM_MESSAGE } from '../database/Tables'
-import { JobPosition } from '../model/JobModel'
-import { ChatMessage, ChatSession, SystemMessage } from '../model/MessageModel'
+import { ChatMessage, ChatSession, SystemMessage, buildConversationId, getPeerId } from '../model/MessageModel'
 import { UserProfile } from '../model/UserModel'
-
-interface ParsedConversationSession {
-  ownerId: string
-  peerId: string
-  jobId: string
-}
+import { MessageApiService, RemoteConversation, RemoteMessage } from './MessageApiService'
 
 export class MessageDao {
   private helper: DatabaseHelper = DatabaseHelper.getInstance()
 
-  async getSessions(userId: string): Promise<ChatSession[]> {
+  // 同步会话列表：从后端 REST 拉取并合并到本地
+  async syncConversations(userId: string): Promise<void> {
+    const conversations = await MessageApiService.fetchConversations(userId)
+    if (conversations.length === 0) {
+      return
+    }
     const store = await this.helper.getStore()
-    const sql = `SELECT * FROM ${TABLE_CHAT_SESSION} WHERE instr(session_id, 'chat__${userId}__') = 1 OR instr(session_id, 'session_${userId}_') = 1 ORDER BY last_message_time DESC`
-    const rs = await store.querySql(sql)
+    for (let i = 0; i < conversations.length; i++) {
+      const c = conversations[i]
+      const peerId = getPeerId(c.id, userId)
+      const remoteUnread = userId === c.user1Id ? c.unreadCountUser1 : c.unreadCountUser2
+      const exists = await this.conversationExists(c.id)
+      if (exists) {
+        // 更新消息预览；未读数只升不降（markConversationRead 负责清零）
+        // 本地 peer_name 优先，为空则从用户表推导
+        const localPeerName = await this.getLocalPeerName(c.id)
+        const fillName = localPeerName || (await this.getPeerDisplayName(peerId))
+        await store.executeSql(
+          `UPDATE ${TABLE_CHAT_SESSION}
+          SET last_message = '${this.escapeSql(c.lastMessage || '')}',
+              last_message_time = ${c.lastMessageTime || 0},
+              unread_count = MAX(unread_count, ${remoteUnread}),
+              peer_name = CASE WHEN peer_name = '' AND '${this.escapeSql(fillName)}' != '' THEN '${this.escapeSql(fillName)}' ELSE peer_name END
+          WHERE session_id = '${c.id}'`
+        )
+      } else {
+        const peerName = await this.getPeerDisplayName(peerId)
+        await store.executeSql(
+          `INSERT OR IGNORE INTO ${TABLE_CHAT_SESSION}
+          (session_id, peer_id, peer_name, peer_avatar, last_message, last_message_time, unread_count, is_ai_agent)
+          VALUES ('${c.id}', '${peerId}', '${this.escapeSql(peerName)}', '', '${this.escapeSql(c.lastMessage || '')}', ${c.lastMessageTime || 0}, ${remoteUnread}, 0)`
+        )
+      }
+    }
+  }
+
+  // 同步消息：从后端 REST 拉取并合并到本地（用于初次加载或拉取更早的历史）
+  async syncMessages(conversationId: string, page: number = 0): Promise<number> {
+    const messages = await MessageApiService.fetchMessages(conversationId, page)
+    if (messages.length === 0) {
+      return 0
+    }
+    const store = await this.helper.getStore()
+    let count = 0
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i]
+      const existing = await this.messageExists(store, m.id)
+      if (!existing) {
+        await store.executeSql(
+          `INSERT OR IGNORE INTO ${TABLE_CHAT_MESSAGE}
+          (message_id, session_id, sender_id, receiver_id, content, timestamp, is_ai_agent_reply, message_type, is_read)
+          VALUES ('${m.id}', '${m.conversationId}', '${m.senderId}', '${m.receiverId || ''}', '${this.escapeSql(m.content)}', ${m.timestamp}, 0, '${(m.type || 'TEXT').toLowerCase()}', ${m.isRead ? 1 : 0})`
+        )
+        count++
+      }
+    }
+    return count
+  }
+
+  private async messageExists(store: relationalStore.RdbStore, messageId: string): Promise<boolean> {
+    try {
+      const rs = await store.querySql(
+        `SELECT 1 FROM ${TABLE_CHAT_MESSAGE} WHERE message_id = '${messageId}'`
+      )
+      const exists = rs.goToFirstRow()
+      rs.close()
+      return exists
+    } catch (e) {
+      return false
+    }
+  }
+
+  // 获取本地会话列表
+  async getConversations(userId: string): Promise<ChatSession[]> {
+    const store = await this.helper.getStore()
+    const rs = await store.querySql(
+      `SELECT * FROM ${TABLE_CHAT_SESSION} WHERE instr(session_id, '${userId}') > 0 ORDER BY last_message_time DESC`
+    )
     const sessions: ChatSession[] = []
     while (rs.goToNextRow()) {
+      const sessionId = rs.getString(rs.getColumnIndex('session_id'))
+      // 从 session_id 动态推导对方 ID，而非依赖存储的 peer_id（存储值可能以另一方视角写入）
+      const peerId = getPeerId(sessionId, userId)
+      // 始终从用户表推导对方显示名（存储的 peer_name 可能以另一方视角写入）
+      let peerName = await this.getPeerDisplayName(peerId)
+      if (!peerName) {
+        // 用户表查不到则回退到已存储的 peer_name
+        peerName = rs.getString(rs.getColumnIndex('peer_name'))
+      }
+      // 回填推导结果
+      if (peerName) {
+        try {
+          await store.executeSql(
+            `UPDATE ${TABLE_CHAT_SESSION} SET peer_name = '${this.escapeSql(peerName)}', peer_id = '${peerId}' WHERE session_id = '${sessionId}'`
+          )
+        } catch (e) {
+          // ignore
+        }
+      }
+      // 动态计算未读数（对方发送的未读消息数）+ 会话存储的兜底值（种子数据/后端同步）
+      let unreadCount = rs.getLong(rs.getColumnIndex('unread_count'))
+      try {
+        const countRs = await store.querySql(
+          `SELECT COUNT(*) AS cnt FROM ${TABLE_CHAT_MESSAGE} WHERE session_id = '${sessionId}' AND sender_id = '${peerId}' AND is_read = 0`
+        )
+        if (countRs.goToFirstRow()) {
+          const dynamicCount = countRs.getLong(countRs.getColumnIndex('cnt'))
+          unreadCount = Math.max(unreadCount, dynamicCount)
+        }
+        countRs.close()
+      } catch (e) {
+        // keep stored value
+      }
       sessions.push({
-        sessionId: rs.getString(rs.getColumnIndex('session_id')),
-        peerId: rs.getString(rs.getColumnIndex('peer_id')),
-        peerName: rs.getString(rs.getColumnIndex('peer_name')),
+        sessionId: sessionId,
+        peerId: peerId,
+        peerName: peerName || peerId || '用户',
         peerAvatar: rs.getString(rs.getColumnIndex('peer_avatar')),
         lastMessage: rs.getString(rs.getColumnIndex('last_message')),
         lastMessageTime: rs.getLong(rs.getColumnIndex('last_message_time')),
-        unreadCount: rs.getLong(rs.getColumnIndex('unread_count')),
+        unreadCount: unreadCount,
         isAIAgent: rs.getLong(rs.getColumnIndex('is_ai_agent')) === 1
       })
     }
@@ -35,135 +136,11 @@ export class MessageDao {
     return sessions
   }
 
-  async ensureJobSeekerStarterSession(userId: string): Promise<string> {
-    const store = await this.helper.getStore()
-    const sessionId = `session_${userId}_hr_demo`
-    const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
-    predicates.equalTo('session_id', sessionId)
-    const rs = await store.query(predicates)
-    const exists = rs.goToFirstRow()
-    rs.close()
-    if (exists) {
-      return sessionId
-    }
-
-    const now = Date.now()
-    const sessionBucket: relationalStore.ValuesBucket = {
-      session_id: sessionId,
-      peer_id: 'hr_demo_001',
-      peer_name: '校招HR',
-      peer_avatar: '',
-      last_message: '你好，方便介绍一下你的项目经历和可约面时间吗？',
-      last_message_time: now - 60000,
-      unread_count: 1,
-      is_ai_agent: 1
-    }
-    await store.insert(TABLE_CHAT_SESSION, sessionBucket)
-
-    const messages: ChatMessage[] = [
-      {
-        messageId: `msg_${now - 3600000}`,
-        sessionId: sessionId,
-        senderId: 'hr_demo_001',
-        content: '你好，我看了你的简历，对你的项目经历比较感兴趣。',
-        timestamp: now - 3600000,
-        isAIAgentReply: false,
-        messageType: 'text',
-        isRead: true
-      },
-      {
-        messageId: `msg_${now - 1800000}`,
-        sessionId: sessionId,
-        senderId: 'hr_demo_001',
-        content: '方便介绍一下你最近做过的项目吗？',
-        timestamp: now - 1800000,
-        isAIAgentReply: false,
-        messageType: 'text',
-        isRead: true
-      },
-      {
-        messageId: `msg_${now - 60000}`,
-        sessionId: sessionId,
-        senderId: 'hr_demo_001',
-        content: '你好，方便介绍一下你的项目经历和可约面时间吗？',
-        timestamp: now - 60000,
-        isAIAgentReply: false,
-        messageType: 'text',
-        isRead: false
-      }
-    ]
-
-    for (let i = 0; i < messages.length; i++) {
-      await this.insertMessage(messages[i])
-    }
-    return sessionId
-  }
-
-  async ensureApplicationConversation(job: JobPosition, jobSeeker: UserProfile, recruiter: UserProfile): Promise<string> {
-    const studentSessionId = this.buildConversationSessionId(jobSeeker.userId, recruiter.userId, job.jobId)
-    const recruiterSessionId = this.buildConversationSessionId(recruiter.userId, jobSeeker.userId, job.jobId)
-    const recruiterName = recruiter.hrRealName || recruiter.companyName || job.companyName || '招聘方'
-    const studentName = jobSeeker.realName || jobSeeker.phone || '候选人'
-    const preview = `已就「${job.title}」建立沟通，可直接交流。`
-    const now = Date.now()
-
-    await this.ensureSession({
-      sessionId: studentSessionId,
-      peerId: recruiter.userId,
-      peerName: recruiterName,
-      peerAvatar: recruiter.avatar ?? '',
-      lastMessage: preview,
-      lastMessageTime: now,
-      unreadCount: 0,
-      isAIAgent: false
-    })
-
-    await this.ensureSession({
-      sessionId: recruiterSessionId,
-      peerId: jobSeeker.userId,
-      peerName: studentName,
-      peerAvatar: jobSeeker.avatar ?? '',
-      lastMessage: preview,
-      lastMessageTime: now,
-      unreadCount: 0,
-      isAIAgent: false
-    })
-
-    const studentMessages = await this.getMessages(studentSessionId)
-    if (studentMessages.length === 0) {
-      await this.insertRawMessage({
-        messageId: `sys_${now}_student`,
-        sessionId: studentSessionId,
-        senderId: 'system_notice',
-        content: `你已投递「${job.title}」，可在此直接与 ${recruiterName} 沟通。`,
-        timestamp: now,
-        isAIAgentReply: false,
-        messageType: 'text',
-        isRead: true
-      }, false)
-    }
-
-    const recruiterMessages = await this.getMessages(recruiterSessionId)
-    if (recruiterMessages.length === 0) {
-      await this.insertRawMessage({
-        messageId: `sys_${now}_recruiter`,
-        sessionId: recruiterSessionId,
-        senderId: 'system_notice',
-        content: `${studentName} 已投递「${job.title}」，你们现在可以直接沟通。`,
-        timestamp: now,
-        isAIAgentReply: false,
-        messageType: 'text',
-        isRead: true
-      }, false)
-    }
-
-    return studentSessionId
-  }
-
-  async getMessages(sessionId: string): Promise<ChatMessage[]> {
+  // 获取本地消息
+  async getMessages(conversationId: string): Promise<ChatMessage[]> {
     const store = await this.helper.getStore()
     const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_MESSAGE)
-    predicates.equalTo('session_id', sessionId)
+    predicates.equalTo('session_id', conversationId)
     predicates.orderByAsc('timestamp')
     const rs = await store.query(predicates)
     const messages: ChatMessage[] = []
@@ -172,6 +149,7 @@ export class MessageDao {
         messageId: rs.getString(rs.getColumnIndex('message_id')),
         sessionId: rs.getString(rs.getColumnIndex('session_id')),
         senderId: rs.getString(rs.getColumnIndex('sender_id')),
+        receiverId: rs.getString(rs.getColumnIndex('receiver_id')),
         content: rs.getString(rs.getColumnIndex('content')),
         timestamp: rs.getLong(rs.getColumnIndex('timestamp')),
         isAIAgentReply: rs.getLong(rs.getColumnIndex('is_ai_agent_reply')) === 1,
@@ -183,43 +161,212 @@ export class MessageDao {
     return messages
   }
 
+  // 插入消息到本地数据库
   async insertMessage(message: ChatMessage): Promise<void> {
-    await this.insertRawMessage(message, !message.isRead)
-  }
-
-  async insertConversationMessage(message: ChatMessage): Promise<void> {
-    await this.insertRawMessage(message, false)
-    const counterpartSessionId = this.getCounterpartSessionId(message.sessionId)
-    if (!counterpartSessionId) {
-      return
-    }
-
-    const counterpartExists = await this.sessionExists(counterpartSessionId)
-    if (!counterpartExists) {
-      return
-    }
-
-    await this.insertRawMessage({
-      messageId: `${message.messageId}_mirror`,
-      sessionId: counterpartSessionId,
-      senderId: message.senderId,
+    const store = await this.helper.getStore()
+    const bucket: relationalStore.ValuesBucket = {
+      message_id: message.messageId,
+      session_id: message.sessionId,
+      sender_id: message.senderId,
+      receiver_id: message.receiverId || '',
       content: message.content,
       timestamp: message.timestamp,
-      isAIAgentReply: message.isAIAgentReply,
-      messageType: message.messageType,
-      isRead: false
-    }, true)
+      is_ai_agent_reply: message.isAIAgentReply ? 1 : 0,
+      message_type: message.messageType,
+      is_read: message.isRead ? 1 : 0
+    }
+    await store.insert(TABLE_CHAT_MESSAGE, bucket)
+
+    // 更新会话最后消息
+    const sessionBucket: relationalStore.ValuesBucket = {
+      last_message: message.content,
+      last_message_time: message.timestamp
+    }
+    const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
+    predicates.equalTo('session_id', message.sessionId)
+    await store.update(sessionBucket, predicates)
   }
 
-  async markSessionRead(sessionId: string): Promise<void> {
+  // 确保会话存在
+  async ensureConversation(conversationId: string, peerId: string, peerName: string): Promise<void> {
+    const exists = await this.conversationExists(conversationId)
+    if (exists) {
+      return
+    }
+    const store = await this.helper.getStore()
+    const bucket: relationalStore.ValuesBucket = {
+      session_id: conversationId,
+      peer_id: peerId,
+      peer_name: peerName,
+      peer_avatar: '',
+      last_message: '',
+      last_message_time: Date.now(),
+      unread_count: 0,
+      is_ai_agent: 0
+    }
+    await store.insert(TABLE_CHAT_SESSION, bucket)
+  }
+
+  // === 演示种子会话（仅首次创建，只插会话不插消息） ===
+
+  async ensureRecruiterDemoSession(userId: string): Promise<void> {
+    const studentId = 'student_demo_001'
+    const conversationId = buildConversationId(userId, studentId)
+    if (await this.conversationExists(conversationId)) {
+      return
+    }
+    const now = Date.now()
+    const store = await this.helper.getStore()
+    const bucket: relationalStore.ValuesBucket = {
+      session_id: conversationId,
+      peer_id: studentId,
+      peer_name: '',
+      peer_avatar: '',
+      last_message: '你好 HR，我对贵公司的实习岗位比较感兴趣。',
+      last_message_time: now,
+      unread_count: 1,
+      is_ai_agent: 0
+    }
+    await store.insert(TABLE_CHAT_SESSION, bucket)
+  }
+
+  async ensureJobSeekerDemoSession(userId: string): Promise<void> {
+    const hrId = 'hr_demo_001'
+    const conversationId = buildConversationId(userId, hrId)
+    if (await this.conversationExists(conversationId)) {
+      return
+    }
+    const now = Date.now()
+    const store = await this.helper.getStore()
+    const bucket: relationalStore.ValuesBucket = {
+      session_id: conversationId,
+      peer_id: hrId,
+      peer_name: '校招HR',
+      peer_avatar: '',
+      last_message: '你好，方便介绍一下你的项目经历吗？',
+      last_message_time: now,
+      unread_count: 1,
+      is_ai_agent: 1
+    }
+    await store.insert(TABLE_CHAT_SESSION, bucket)
+  }
+
+  // 为投递岗位创建沟通会话
+  async ensureApplicationConversation(recruiterId: string, studentId: string, studentName: string, recruiterName: string, jobTitle: string): Promise<string> {
+    const conversationId = buildConversationId(recruiterId, studentId)
+    const now = Date.now()
+    const preview = `已就「${jobTitle}」建立沟通。`
+
+    await this.ensureConversation(conversationId, studentId, '')
+    const store = await this.helper.getStore()
+
+    // 更新会话预览
+    const bucket: relationalStore.ValuesBucket = {
+      last_message: preview,
+      last_message_time: now
+    }
+    const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
+    predicates.equalTo('session_id', conversationId)
+    await store.update(bucket, predicates)
+
+    // 插入系统提示消息
+    const existingMessages = await this.getMessages(conversationId)
+    if (existingMessages.length === 0) {
+      const sysMsg: ChatMessage = {
+        messageId: `sys_${now}_${conversationId}`,
+        sessionId: conversationId,
+        senderId: 'system_notice',
+        receiverId: '',
+        content: `${studentName} 已投递「${jobTitle}」，你们现在可以直接沟通。`,
+        timestamp: now,
+        isAIAgentReply: false,
+        messageType: 'text',
+        isRead: true
+      }
+      await this.insertMessage(sysMsg)
+    }
+
+    return conversationId
+  }
+
+  // 标记本地会话已读
+  async markConversationRead(conversationId: string): Promise<void> {
     const store = await this.helper.getStore()
     const sessionPredicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
-    sessionPredicates.equalTo('session_id', sessionId)
+    sessionPredicates.equalTo('session_id', conversationId)
     await store.update({ unread_count: 0 }, sessionPredicates)
 
     const messagePredicates = new relationalStore.RdbPredicates(TABLE_CHAT_MESSAGE)
-    messagePredicates.equalTo('session_id', sessionId)
+    messagePredicates.equalTo('session_id', conversationId)
     await store.update({ is_read: 1 }, messagePredicates)
+  }
+
+  // 标记远程已读
+  async markReadRemote(conversationId: string, userId: string): Promise<void> {
+    await MessageApiService.markRead(conversationId, userId)
+  }
+
+  // 增加未读数（收到其他会话的 WebSocket 消息时调用）
+  async incrementUnread(conversationId: string, lastMessage: string, timestamp: number): Promise<void> {
+    const store = await this.helper.getStore()
+    try {
+      await store.executeSql(
+        `UPDATE ${TABLE_CHAT_SESSION}
+        SET unread_count = unread_count + 1,
+            last_message = '${this.escapeSql(lastMessage)}',
+            last_message_time = ${timestamp}
+        WHERE session_id = '${conversationId}'`
+      )
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // 后端推送 UNREAD_UPDATE 时，直接设置某会话的未读数
+  async setUnreadCount(conversationId: string, unreadCount: number): Promise<void> {
+    const store = await this.helper.getStore()
+    try {
+      await store.executeSql(
+        `UPDATE ${TABLE_CHAT_SESSION} SET unread_count = ${unreadCount} WHERE session_id = '${conversationId}'`
+      )
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // 获取未读总数（本地动态计算 + 后端兜底）
+  async getUnreadTotal(userId: string): Promise<number> {
+    const sessions = await this.getConversations(userId)
+    let total = 0
+    for (let i = 0; i < sessions.length; i++) {
+      total += sessions[i].unreadCount
+    }
+    return total
+  }
+
+  // 检查在线状态
+  async checkOnline(userId: string): Promise<boolean> {
+    return await MessageApiService.checkOnline(userId)
+  }
+
+  // AI 代聊相关
+  async updateAIAgentEnabled(userId: string, enabled: boolean): Promise<void> {
+    const store = await this.helper.getStore()
+    await store.executeSql(
+      `INSERT OR REPLACE INTO tb_user_setting (user_id, ai_agent_enabled, update_time) VALUES ('${userId}', ${enabled ? 1 : 0}, ${Date.now()})`
+    )
+  }
+
+  async getAIAgentEnabled(userId: string): Promise<boolean> {
+    const store = await this.helper.getStore()
+    try {
+      const rs = await store.querySql(`SELECT ai_agent_enabled FROM tb_user_setting WHERE user_id = '${userId}'`)
+      const enabled = rs.goToFirstRow() ? rs.getLong(rs.getColumnIndex('ai_agent_enabled')) === 1 : false
+      rs.close()
+      return enabled
+    } catch (e) {
+      return false
+    }
   }
 
   async getSystemMessages(userId: string): Promise<SystemMessage[]> {
@@ -244,113 +391,67 @@ export class MessageDao {
     return messages
   }
 
-  async updateAIAgentEnabled(userId: string, enabled: boolean): Promise<void> {
-    const store = await this.helper.getStore()
-    await store.executeSql(
-      `INSERT OR REPLACE INTO tb_user_setting (user_id, ai_agent_enabled, update_time) VALUES ('${userId}', ${enabled ? 1 : 0}, ${Date.now()})`
-    )
-  }
-
-  async getAIAgentEnabled(userId: string): Promise<boolean> {
-    const store = await this.helper.getStore()
+  // 从用户表查找对方显示名
+  private async getPeerDisplayName(peerId: string): Promise<string> {
     try {
-      const rs = await store.querySql(`SELECT ai_agent_enabled FROM tb_user_setting WHERE user_id = '${userId}'`)
-      const enabled = rs.goToFirstRow() ? rs.getLong(rs.getColumnIndex('ai_agent_enabled')) === 1 : false
+      const store = await this.helper.getStore()
+      const rs = await store.querySql(
+        `SELECT real_name, hr_real_name, company_name FROM tb_user WHERE user_id = '${peerId}'`
+      )
+      if (rs.goToFirstRow()) {
+        const realName = rs.getString(rs.getColumnIndex('real_name'))
+        if (realName) {
+          rs.close()
+          return realName
+        }
+        const hrRealName = rs.getString(rs.getColumnIndex('hr_real_name'))
+        if (hrRealName) {
+          rs.close()
+          return hrRealName
+        }
+        const companyName = rs.getString(rs.getColumnIndex('company_name'))
+        if (companyName) {
+          rs.close()
+          return companyName
+        }
+      }
       rs.close()
-      return enabled
     } catch (e) {
-      return false
+      // ignore
     }
+    return ''
   }
 
-  private async ensureSession(session: ChatSession): Promise<void> {
-    const exists = await this.sessionExists(session.sessionId)
-    if (exists) {
-      return
+  // 获取本地会话已存储的 peer_name
+  private async getLocalPeerName(conversationId: string): Promise<string> {
+    try {
+      const store = await this.helper.getStore()
+      const rs = await store.querySql(
+        `SELECT peer_name FROM ${TABLE_CHAT_SESSION} WHERE session_id = '${conversationId}'`
+      )
+      if (rs.goToFirstRow()) {
+        const name = rs.getString(rs.getColumnIndex('peer_name'))
+        rs.close()
+        return name || ''
+      }
+      rs.close()
+    } catch (e) {
+      // ignore
     }
-    const store = await this.helper.getStore()
-    const bucket: relationalStore.ValuesBucket = {
-      session_id: session.sessionId,
-      peer_id: session.peerId,
-      peer_name: session.peerName,
-      peer_avatar: session.peerAvatar,
-      last_message: session.lastMessage,
-      last_message_time: session.lastMessageTime,
-      unread_count: session.unreadCount,
-      is_ai_agent: session.isAIAgent ? 1 : 0
-    }
-    await store.insert(TABLE_CHAT_SESSION, bucket)
+    return ''
   }
 
-  private async sessionExists(sessionId: string): Promise<boolean> {
+  private async conversationExists(conversationId: string): Promise<boolean> {
     const store = await this.helper.getStore()
     const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
-    predicates.equalTo('session_id', sessionId)
+    predicates.equalTo('session_id', conversationId)
     const rs = await store.query(predicates)
     const exists = rs.goToFirstRow()
     rs.close()
     return exists
   }
 
-  private async getSessionUnreadCount(sessionId: string): Promise<number> {
-    const store = await this.helper.getStore()
-    const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
-    predicates.equalTo('session_id', sessionId)
-    const rs = await store.query(predicates)
-    const unreadCount = rs.goToFirstRow() ? rs.getLong(rs.getColumnIndex('unread_count')) : 0
-    rs.close()
-    return unreadCount
-  }
-
-  private async insertRawMessage(message: ChatMessage, incrementUnread: boolean): Promise<void> {
-    const store = await this.helper.getStore()
-    const bucket: relationalStore.ValuesBucket = {
-      message_id: message.messageId,
-      session_id: message.sessionId,
-      sender_id: message.senderId,
-      content: message.content,
-      timestamp: message.timestamp,
-      is_ai_agent_reply: message.isAIAgentReply ? 1 : 0,
-      message_type: message.messageType,
-      is_read: message.isRead ? 1 : 0
-    }
-    await store.insert(TABLE_CHAT_MESSAGE, bucket)
-
-    const currentUnreadCount = await this.getSessionUnreadCount(message.sessionId)
-    const sessionBucket: relationalStore.ValuesBucket = {
-      last_message: message.content,
-      last_message_time: message.timestamp,
-      unread_count: incrementUnread ? currentUnreadCount + 1 : currentUnreadCount
-    }
-    const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
-    predicates.equalTo('session_id', message.sessionId)
-    await store.update(sessionBucket, predicates)
-  }
-
-  private buildConversationSessionId(ownerId: string, peerId: string, jobId: string): string {
-    return `chat__${ownerId}__${peerId}__${jobId}`
-  }
-
-  private getCounterpartSessionId(sessionId: string): string | null {
-    const parsed = this.parseConversationSessionId(sessionId)
-    if (!parsed) {
-      return null
-    }
-    return this.buildConversationSessionId(parsed.peerId, parsed.ownerId, parsed.jobId)
-  }
-
-  private parseConversationSessionId(sessionId: string): ParsedConversationSession | null {
-    if (!sessionId.startsWith('chat__')) {
-      return null
-    }
-    const parts = sessionId.split('__')
-    if (parts.length !== 4) {
-      return null
-    }
-    return {
-      ownerId: parts[1],
-      peerId: parts[2],
-      jobId: parts[3]
-    }
+  private escapeSql(value: string): string {
+    return value.replace(/'/g, "''")
   }
 }
