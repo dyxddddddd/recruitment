@@ -29,7 +29,12 @@ export class JobDao {
       publish_time: job.publishTime,
       update_time: job.updateTime,
       tags: JSON.stringify(job.tags),
-      is_ai_generated: job.isAIGenerated ? 1 : 0
+      is_ai_generated: job.isAIGenerated ? 1 : 0,
+      task_start_time: job.taskStartTime ?? -1,
+      task_end_time: job.taskEndTime ?? -1,
+      required_day_of_week: job.requiredDayOfWeek ?? -1,
+      required_start_hour: job.requiredStartHour ?? -1,
+      required_end_hour: job.requiredEndHour ?? -1
     }
     await store.insert(TABLE_JOB, vb)
   }
@@ -176,7 +181,10 @@ export class JobDao {
       skills: JSON.stringify(task.skills),
       status: task.status,
       publish_time: task.publishTime,
-      accepted_by: task.acceptedBy ?? ''
+      accepted_by: task.acceptedBy ?? '',
+      required_day_of_week: task.requiredDayOfWeek ?? -1,
+      required_start_hour: task.requiredStartHour ?? -1,
+      required_end_hour: task.requiredEndHour ?? -1
     }
     await store.insert(TABLE_MICRO_TASK, vb)
   }
@@ -216,7 +224,17 @@ export class JobDao {
       viewCount: row.getLong(row.getColumnIndex('view_count')),
       applyCount: row.getLong(row.getColumnIndex('apply_count')),
       tags: JSON.parse(row.getString(row.getColumnIndex('tags')) || '[]') as string[],
-      isAIGenerated: row.getLong(row.getColumnIndex('is_ai_generated')) === 1
+      isAIGenerated: row.getLong(row.getColumnIndex('is_ai_generated')) === 1,
+      taskStartTime: row.getLong(row.getColumnIndex('task_start_time')) >= 0
+        ? row.getLong(row.getColumnIndex('task_start_time')) : undefined,
+      taskEndTime: row.getLong(row.getColumnIndex('task_end_time')) >= 0
+        ? row.getLong(row.getColumnIndex('task_end_time')) : undefined,
+      requiredDayOfWeek: row.getLong(row.getColumnIndex('required_day_of_week')) >= 0
+        ? row.getLong(row.getColumnIndex('required_day_of_week')) : undefined,
+      requiredStartHour: row.getLong(row.getColumnIndex('required_start_hour')) >= 0
+        ? row.getLong(row.getColumnIndex('required_start_hour')) : undefined,
+      requiredEndHour: row.getLong(row.getColumnIndex('required_end_hour')) >= 0
+        ? row.getLong(row.getColumnIndex('required_end_hour')) : undefined
     }
   }
 
@@ -252,7 +270,13 @@ export class JobDao {
       skills: JSON.parse(row.getString(row.getColumnIndex('skills')) || '[]') as string[],
       status: row.getString(row.getColumnIndex('status')),
       publishTime: row.getLong(row.getColumnIndex('publish_time')),
-      acceptedBy: row.getString(row.getColumnIndex('accepted_by'))
+      acceptedBy: row.getString(row.getColumnIndex('accepted_by')),
+      requiredDayOfWeek: row.getLong(row.getColumnIndex('required_day_of_week')) >= 0
+        ? row.getLong(row.getColumnIndex('required_day_of_week')) : undefined,
+      requiredStartHour: row.getLong(row.getColumnIndex('required_start_hour')) >= 0
+        ? row.getLong(row.getColumnIndex('required_start_hour')) : undefined,
+      requiredEndHour: row.getLong(row.getColumnIndex('required_end_hour')) >= 0
+        ? row.getLong(row.getColumnIndex('required_end_hour')) : undefined
     }
   }
 }

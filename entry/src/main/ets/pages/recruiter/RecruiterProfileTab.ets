@@ -251,6 +251,7 @@ export struct RecruiterProfileTab {
               AppState.currentUser = null
               AppState.isLoggedIn = false
               AppState.isGuest = true
+              AppState.syncToStorage()
               router.replaceUrl({ url: AppConstants.ROUTE_INDEX })
             })
         }

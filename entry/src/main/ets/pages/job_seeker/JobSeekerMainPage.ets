@@ -43,7 +43,7 @@ struct JobSeekerMainPage {
 
       if (AppState.isGuest) {
         Row() {
-          Text('游客模式仅开放职位、名企、社区浏览')
+          Text('游客模式仅开放职位、名企和社区浏览')
             .fontSize(11)
             .fontColor('#FFFFFF')
           Blank()
@@ -67,20 +67,20 @@ struct JobSeekerMainPage {
         index: this.currentTabIndex
       }) {
         TabContent() { JobSeekerJobsTab() }
-          .tabBar(this.TabItemBuilder('职位', 0))
+          .tabBar(this.TabItemBuilder('职', '职位', 0))
 
         TabContent() { JobSeekerCompaniesTab() }
-          .tabBar(this.TabItemBuilder('名企', 1))
+          .tabBar(this.TabItemBuilder('企', '名企', 1))
 
         TabContent() { JobSeekerCommunityTab() }
-          .tabBar(this.TabItemBuilder('社区', 2))
+          .tabBar(this.TabItemBuilder('圈', '社区', 2))
 
         if (!AppState.isGuest) {
           TabContent() { JobSeekerMessagesTab() }
-            .tabBar(this.TabItemBuilder('消息', 3))
+            .tabBar(this.TabItemBuilder('信', '消息', 3))
 
           TabContent() { JobSeekerProfileTab() }
-            .tabBar(this.TabItemBuilder('我的', 4))
+            .tabBar(this.TabItemBuilder('我', '我的', 4))
         }
       }
       .barHeight(56)
@@ -95,10 +95,12 @@ struct JobSeekerMainPage {
   }
 
   @Builder
-  TabItemBuilder(title: string, index: number) {
+  TabItemBuilder(icon: string, title: string, index: number) {
     Column() {
-      Text(this.getTabIcon(index))
-        .fontSize(20)
+      Text(icon)
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_PRIMARY : '#999999')
       Text(title)
         .fontSize(10)
         .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_PRIMARY : '#999999')
@@ -108,10 +110,5 @@ struct JobSeekerMainPage {
     .height('100%')
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
-  }
-
-  getTabIcon(index: number): string {
-    const icons = ['💼', '🏢', '👥', '💬', '👤']
-    return icons[index]
   }
 }

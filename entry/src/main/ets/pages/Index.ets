@@ -1,9 +1,7 @@
-// 首页 - 角色选择入口（双向流分水岭）
-
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../common/constants/AppConstants'
 import { RoleCard } from '../common/components/RoleCard'
-import { UserProfile, UserRole, StudentType } from '../model/UserModel'
+import { StudentType, UserRole } from '../model/UserModel'
 import { UserDao } from '../service/UserDao'
 
 @Entry
@@ -13,19 +11,48 @@ struct Index {
   private userDao: UserDao = new UserDao()
 
   async aboutToAppear(): Promise<void> {
-    // 检查是否有已登录用户
+    AppState.syncFromStorage()
+
     const loggedInUser = await this.userDao.getLoggedInUser()
     if (loggedInUser) {
-      AppState.currentUser = loggedInUser
+      const normalizedLoggedInUser = await this.normalizeStudentType(loggedInUser)
+      AppState.currentUser = normalizedLoggedInUser
       AppState.isLoggedIn = true
       AppState.isGuest = false
-      if (loggedInUser.role === UserRole.JOB_SEEKER && !loggedInUser.studentType) {
-        // 已登录但未设置身份类型，跳转到身份选择
-        router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
-      } else {
-        this.navigateToMain(loggedInUser.role)
-      }
+      AppState.syncToStorage()
+      this.navigateByUser(normalizedLoggedInUser.role, !!normalizedLoggedInUser.studentType)
+      return
     }
+
+    AppState.currentUser = null
+    AppState.isLoggedIn = false
+    AppState.isGuest = true
+    AppState.syncToStorage()
+  }
+
+  async normalizeStudentType(user: import('../model/UserModel').UserProfile): Promise<import('../model/UserModel').UserProfile> {
+    if (user.studentType) {
+      AppState.rememberStudentType(user.phone, user.studentType)
+      return user
+    }
+    const remembered = AppState.getRememberedStudentType(user.phone)
+    if (remembered === StudentType.CURRENT || remembered === StudentType.GRADUATING) {
+      await this.userDao.updateStudentType(user.userId, remembered as StudentType)
+      const refreshedUser = await this.userDao.getUserById(user.userId)
+      if (refreshedUser) {
+        return refreshedUser
+      }
+      user.studentType = remembered as StudentType
+    }
+    return user
+  }
+
+  navigateByUser(role: UserRole, hasStudentType: boolean): void {
+    if (role === UserRole.JOB_SEEKER && !hasStudentType) {
+      router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
+      return
+    }
+    this.navigateToMain(role)
   }
 
   navigateToMain(role: UserRole): void {
@@ -41,7 +68,6 @@ struct Index {
     if (role === UserRole.JOB_SEEKER) {
       router.pushUrl({ url: AppConstants.ROUTE_LOGIN })
     } else {
-      // 招聘者先登录，然后进行资质认证
       router.pushUrl({
         url: AppConstants.ROUTE_LOGIN,
         params: { role: UserRole.RECRUITER }
@@ -51,7 +77,6 @@ struct Index {
 
   build() {
     Column() {
-      // 顶部
       Column() {
         Text(AppConstants.APP_NAME)
           .fontSize(32)
@@ -69,7 +94,6 @@ struct Index {
       .alignItems(HorizontalAlign.Center)
       .borderRadius({ bottomLeft: 32, bottomRight: 32 })
 
-      // 选择你的身份
       Column() {
         Text('选择你的身份')
           .fontSize(20)
@@ -77,11 +101,10 @@ struct Index {
           .fontColor(AppConstants.COLOR_TEXT_PRIMARY)
           .margin({ top: 40, bottom: 32 })
 
-        // 求职者卡片
         Column() {
           RoleCard({
             title: '我要找工作',
-            description: '在校生/应届生专属 · 兼职微任务/全职实习 · AI简历工具 · 校友引路',
+            description: '在校生/应届生专属，支持微任务、兼职、实习、全职与 AI 求职工具。',
             emoji: '🎓',
             bgColor: '#F0F7FF',
             cardBorderColor: this.selectedRole === UserRole.JOB_SEEKER ? '#4A90D9' : '#D0E0F0'
@@ -91,11 +114,10 @@ struct Index {
         .width('80%')
         .margin({ bottom: 20 })
 
-        // 招聘者卡片
         Column() {
           RoleCard({
             title: '我要招人',
-            description: '企业HR · 人才搜索/推荐 · AI辅助发布 · AI虚拟人一面评估',
+            description: '企业 HR 入口，支持职位发布、人才管理和 AI 辅助招聘。',
             emoji: '💼',
             bgColor: '#FFF8F0',
             cardBorderColor: this.selectedRole === UserRole.RECRUITER ? '#FF6B35' : '#F0D8C0'
@@ -108,8 +130,7 @@ struct Index {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
 
-      // 底部
-      Text('已有账号？直接进入')
+      Text('已有账号，直接进入')
         .fontSize(13)
         .fontColor('#4A90D9')
         .margin({ bottom: 32 })

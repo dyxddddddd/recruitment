@@ -63,6 +63,10 @@ export class ResumeDao {
       email: resume.email,
       skills: JSON.stringify(resume.skills),
       self_intro: resume.selfIntro,
+      is_from_pdf: resume.isFromPDF ? 1 : 0,
+      pdf_uncertain_fields: JSON.stringify(resume.pdfUncertainFields),
+      has_schedule: resume.hasSchedule ? 1 : 0,
+      schedule_id: resume.scheduleId ?? '',
       update_time: Date.now()
     }
     const predicates = new relationalStore.RdbPredicates(TABLE_RESUME)

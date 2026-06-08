@@ -8,6 +8,28 @@ import { UserProfile, UserRole, StudentType, Gender, VipLevel } from '../model/U
 export class UserDao {
   private helper: DatabaseHelper = DatabaseHelper.getInstance()
 
+  private normalizePhone(phone: string): string {
+    return phone.trim()
+  }
+
+  private normalizePassword(password: string): string {
+    return password.trim()
+  }
+
+  private async queryUsersByPhone(phone: string): Promise<UserProfile[]> {
+    const store = await this.helper.getStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
+    predicates.equalTo('phone', this.normalizePhone(phone))
+    predicates.orderByDesc('update_time')
+    const resultSet = await store.query(predicates)
+    const users: UserProfile[] = []
+    while (resultSet.goToNextRow()) {
+      users.push(this.rowToUserProfile(resultSet))
+    }
+    resultSet.close()
+    return users
+  }
+
   async insertUser(user: UserProfile): Promise<void> {
     const store = await this.helper.getStore()
     const valueBucket: relationalStore.ValuesBucket = {
@@ -42,10 +64,11 @@ export class UserDao {
 
   async updateUser(user: UserProfile): Promise<void> {
     const store = await this.helper.getStore()
+    const existing = await this.getUserById(user.userId)
     const valueBucket: relationalStore.ValuesBucket = {
       phone: user.phone,
       role: user.role,
-      student_type: user.studentType ?? '',
+      student_type: user.studentType ?? existing?.studentType ?? '',
       real_name: user.realName ?? '',
       gender: user.gender ?? '',
       birthday: user.birthday ?? '',
@@ -63,7 +86,7 @@ export class UserDao {
       vip_level: user.vipLevel ?? VipLevel.NORMAL,
       position_count: user.positionCount ?? 0,
       hr_real_name: user.hrRealName ?? '',
-      password: user.password ?? '',
+      password: user.password && user.password.length > 0 ? user.password : (existing?.password ?? ''),
       update_time: Date.now()
     }
     const predicates = new relationalStore.RdbPredicates(TABLE_USER)
@@ -86,10 +109,14 @@ export class UserDao {
     const store = await this.helper.getStore()
     const predicates = new relationalStore.RdbPredicates(TABLE_USER)
     predicates.equalTo('is_login', 1)
+    predicates.orderByDesc('update_time')
     const resultSet = await store.query(predicates)
     if (resultSet.goToFirstRow()) {
-      return this.rowToUserProfile(resultSet)
+      const user = this.rowToUserProfile(resultSet)
+      resultSet.close()
+      return user
     }
+    resultSet.close()
     return null
   }
 
@@ -97,6 +124,21 @@ export class UserDao {
     const store = await this.helper.getStore()
     const valueBucket: relationalStore.ValuesBucket = { is_login: 0 }
     const predicates = new relationalStore.RdbPredicates(TABLE_USER)
+    await store.update(valueBucket, predicates)
+  }
+
+  async markUserLoggedIn(userId: string): Promise<void> {
+    const store = await this.helper.getStore()
+    const clearBucket: relationalStore.ValuesBucket = { is_login: 0 }
+    const clearPredicates = new relationalStore.RdbPredicates(TABLE_USER)
+    await store.update(clearBucket, clearPredicates)
+
+    const valueBucket: relationalStore.ValuesBucket = {
+      is_login: 1,
+      update_time: Date.now()
+    }
+    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
+    predicates.equalTo('user_id', userId)
     await store.update(valueBucket, predicates)
   }
 
@@ -118,42 +160,93 @@ export class UserDao {
     await store.update(valueBucket, predicates)
   }
 
-  async isPhoneBound(phone: string): Promise<boolean> {
+  async updateStudentTypeByPhone(phone: string, studentType: StudentType): Promise<void> {
+    const normalizedPhone = this.normalizePhone(phone)
+    if (!normalizedPhone) {
+      return
+    }
     const store = await this.helper.getStore()
+    const valueBucket: relationalStore.ValuesBucket = {
+      student_type: studentType,
+      update_time: Date.now()
+    }
     const predicates = new relationalStore.RdbPredicates(TABLE_USER)
-    predicates.equalTo('phone', phone)
-    const resultSet = await store.query(predicates)
-    const count = resultSet.rowCount
-    resultSet.close()
-    return count > 0
+    predicates.equalTo('phone', normalizedPhone)
+    await store.update(valueBucket, predicates)
+  }
+
+  async updatePassword(userId: string, password: string): Promise<void> {
+    const store = await this.helper.getStore()
+    const valueBucket: relationalStore.ValuesBucket = {
+      password: password,
+      update_time: Date.now()
+    }
+    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
+    predicates.equalTo('user_id', userId)
+    await store.update(valueBucket, predicates)
+  }
+
+  async isPhoneBound(phone: string): Promise<boolean> {
+    const users = await this.queryUsersByPhone(phone)
+    return users.length > 0
   }
 
   async getUserByPhone(phone: string): Promise<UserProfile | null> {
-    const store = await this.helper.getStore()
-    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
-    predicates.equalTo('phone', phone)
-    const resultSet = await store.query(predicates)
-    if (resultSet.goToFirstRow()) {
-      const user = this.rowToUserProfile(resultSet)
-      resultSet.close()
-      return user
+    const users = await this.queryUsersByPhone(phone)
+    if (users.length === 0) {
+      return null
     }
-    resultSet.close()
-    return null
+    for (let i = 0; i < users.length; i++) {
+      if (users[i].studentType) {
+        return users[i]
+      }
+    }
+    return users[0]
   }
 
   async getUserByPhoneAndPassword(phone: string, password: string): Promise<UserProfile | null> {
-    const store = await this.helper.getStore()
-    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
-    predicates.equalTo('phone', phone)
-    predicates.equalTo('password', password)
-    const resultSet = await store.query(predicates)
-    if (resultSet.goToFirstRow()) {
-      const user = this.rowToUserProfile(resultSet)
-      resultSet.close()
-      return user
+    const normalizedPhone = this.normalizePhone(phone)
+    const normalizedPassword = this.normalizePassword(password)
+    if (!normalizedPhone || !normalizedPassword) {
+      return null
     }
-    resultSet.close()
+    const users = await this.queryUsersByPhone(normalizedPhone)
+    let matchedWithoutStudentType: UserProfile | null = null
+    for (let i = 0; i < users.length; i++) {
+      const candidate = users[i]
+      if (candidate && (candidate.password || '') === normalizedPassword) {
+        if (candidate.studentType) {
+          return candidate
+        }
+        if (!matchedWithoutStudentType) {
+          matchedWithoutStudentType = candidate
+        }
+      }
+    }
+    if (matchedWithoutStudentType) {
+      for (let i = 0; i < users.length; i++) {
+        const candidate = users[i]
+        if (candidate && candidate.studentType) {
+          await this.updateStudentType(matchedWithoutStudentType.userId, candidate.studentType)
+          return await this.getUserById(matchedWithoutStudentType.userId)
+        }
+      }
+      return matchedWithoutStudentType
+    }
+    for (let i = 0; i < users.length; i++) {
+      const candidate = users[i]
+      if (candidate && (!candidate.password || candidate.password.length === 0)) {
+        for (let j = 0; j < users.length; j++) {
+          const typedUser = users[j]
+          if (typedUser && typedUser.studentType) {
+            await this.updateStudentType(candidate.userId, typedUser.studentType)
+            break
+          }
+        }
+        await this.updatePassword(candidate.userId, normalizedPassword)
+        return await this.getUserById(candidate.userId)
+      }
+    }
     return null
   }
 

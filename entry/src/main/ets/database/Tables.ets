@@ -1,7 +1,7 @@
 // 数据库表结构定义
 
 export const DATABASE_NAME = 'UniCampus.db'
-export const DATABASE_VERSION = 2
+export const DATABASE_VERSION = 5
 
 // 用户表
 export const TABLE_USER = 'tb_user'
@@ -123,7 +123,12 @@ CREATE TABLE IF NOT EXISTS ${TABLE_JOB} (
   view_count INTEGER DEFAULT 0,
   apply_count INTEGER DEFAULT 0,
   tags TEXT,
-  is_ai_generated INTEGER DEFAULT 0
+  is_ai_generated INTEGER DEFAULT 0,
+  task_start_time INTEGER DEFAULT -1,
+  task_end_time INTEGER DEFAULT -1,
+  required_day_of_week INTEGER DEFAULT -1,
+  required_start_hour INTEGER DEFAULT -1,
+  required_end_hour INTEGER DEFAULT -1
 )`
 
 // 投递表
@@ -155,7 +160,10 @@ CREATE TABLE IF NOT EXISTS ${TABLE_MICRO_TASK} (
   skills TEXT,
   status TEXT,
   publish_time INTEGER,
-  accepted_by TEXT
+  accepted_by TEXT,
+  required_day_of_week INTEGER DEFAULT -1,
+  required_start_hour INTEGER DEFAULT -1,
+  required_end_hour INTEGER DEFAULT -1
 )`
 
 // 聊天会话表
@@ -242,6 +250,7 @@ CREATE TABLE IF NOT EXISTS ${TABLE_COMMUNITY_POST} (
   is_anonymous INTEGER DEFAULT 0,
   tags TEXT,
   like_count INTEGER DEFAULT 0,
+  favorite_count INTEGER DEFAULT 0,
   comment_count INTEGER DEFAULT 0,
   create_time INTEGER
 )`
@@ -256,6 +265,24 @@ CREATE TABLE IF NOT EXISTS ${TABLE_POST_COMMENT} (
   content TEXT,
   is_anonymous INTEGER DEFAULT 0,
   create_time INTEGER
+)`
+
+export const TABLE_POST_LIKE = 'tb_post_like'
+export const CREATE_TABLE_POST_LIKE = `
+CREATE TABLE IF NOT EXISTS ${TABLE_POST_LIKE} (
+  user_id TEXT NOT NULL,
+  post_id TEXT NOT NULL,
+  create_time INTEGER,
+  PRIMARY KEY (user_id, post_id)
+)`
+
+export const TABLE_POST_FAVORITE = 'tb_post_favorite'
+export const CREATE_TABLE_POST_FAVORITE = `
+CREATE TABLE IF NOT EXISTS ${TABLE_POST_FAVORITE} (
+  user_id TEXT NOT NULL,
+  post_id TEXT NOT NULL,
+  create_time INTEGER,
+  PRIMARY KEY (user_id, post_id)
 )`
 
 // 用户偏好设置表
@@ -294,6 +321,8 @@ export const ALL_CREATE_TABLES: string[] = [
   CREATE_TABLE_CAREER_TALK,
   CREATE_TABLE_COMMUNITY_POST,
   CREATE_TABLE_POST_COMMENT,
+  CREATE_TABLE_POST_LIKE,
+  CREATE_TABLE_POST_FAVORITE,
   CREATE_TABLE_USER_SETTING,
   CREATE_TABLE_VERIFY_CODE
 ]

@@ -10,6 +10,14 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    "querySchemes": [
+      "weixin",
+      "https",
+      "qqopenapi",
+      "mqqapi",
+      "mqqopensdkapiV2",
+      "mqqopensdkapiV3"
+    ],
     "abilities": [
       {
         "name": "EntryAbility",
@@ -27,6 +35,21 @@
             ],
             "actions": [
               "ohos.want.action.home"
+            ]
+          },
+          {
+            "entities": [
+              "entity.system.browsable"
+            ],
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "qqopenapi",
+                "host": "YOUR_QQ_APP_ID",
+                "pathRegex": "\\b(auth|share)\\b"
+              }
             ]
           }
         ]
@@ -49,6 +72,9 @@
     "requestPermissions": [
       {
         "name": "ohos.permission.INTERNET"
+      },
+      {
+        "name": "ohos.permission.GET_NETWORK_INFO"
       },
       {
         "name": "ohos.permission.CAMERA",

@@ -2,7 +2,7 @@ import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { ApplicationStatus, JobApplication, JobPosition } from '../../model/JobModel'
 import { StudentType, UserProfile } from '../../model/UserModel'
-import { translateExperienceList, ExperienceInput } from '../../service/AITranslateService'
+import { rewriteExperienceList, ExperienceInput } from '../../service/AITranslateService'
 import { JobDao } from '../../service/JobDao'
 import { calculateMatchScore, MatchResult, getMatchSummary } from '../../service/MatchScoreService'
 import { MessageDao } from '../../service/MessageDao'
@@ -160,15 +160,34 @@ struct JobDetailPage {
         const item = resume.experienceList[i]
         inputList.push({ description: item.description, type: item.type })
       }
-      const translated = await translateExperienceList(inputList)
+      const translated = await rewriteExperienceList(inputList)
       return translated.length > 0 ? '系统已同步生成更贴近企业表达的经历说明。' : ''
-    } catch (e) {
+    } catch (_error) {
       return ''
     }
   }
 
   private getRecruiterDisplayName(recruiter: UserProfile): string {
     return recruiter.hrRealName || recruiter.companyName || this.job?.companyName || '招聘方'
+  }
+
+  private formatTaskDateTime(timestamp?: number): string {
+    if (timestamp === undefined || timestamp < 0) {
+      return '未设置'
+    }
+    const date = new Date(timestamp)
+    const year = date.getFullYear()
+    const month = `${date.getMonth() + 1}`.padStart(2, '0')
+    const day = `${date.getDate()}`.padStart(2, '0')
+    const hour = `${date.getHours()}`.padStart(2, '0')
+    const minute = `${date.getMinutes()}`.padStart(2, '0')
+    return `${year}-${month}-${day} ${hour}:${minute}`
+  }
+
+  private shouldShowTaskTime(): boolean {
+    return !!this.job && this.job.category === 'micro_task'
+      && this.job.taskStartTime !== undefined && this.job.taskStartTime >= 0
+      && this.job.taskEndTime !== undefined && this.job.taskEndTime >= 0
   }
 
   build() {
@@ -230,10 +249,14 @@ struct JobDetailPage {
 
             Column() {
               this.DetailRow('岗位类别', this.job!.category === 'micro_task' ? '微任务/短期兼职' : '全职/转正实习')
+              if (this.shouldShowTaskTime()) {
+                this.DetailRow('任务开始', this.formatTaskDateTime(this.job!.taskStartTime))
+                this.DetailRow('任务结束', this.formatTaskDateTime(this.job!.taskEndTime))
+              }
               this.DetailRow('学历要求', this.job!.educationRequired)
               this.DetailRow('工作地点', this.job!.workAddress)
               this.DetailRow('工作年限', this.job!.workYearsRequired)
-              this.DetailRow('发布时间', new Date(this.job!.publishTime).toLocaleDateString())
+              this.DetailRow('发布时间', this.formatTaskDateTime(this.job!.publishTime))
             }
             .width('90%')
             .padding(16)

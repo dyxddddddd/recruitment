@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI'
+import { common } from '@kit.AbilityKit'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
-import { UserProfile, UserRole } from '../../model/UserModel'
+import { StudentType, UserProfile, UserRole } from '../../model/UserModel'
 import { SmsService } from '../../service/SmsService'
 import { ThirdPartyAuthService } from '../../service/ThirdPartyAuthService'
 import { UserDao } from '../../service/UserDao'
@@ -56,7 +57,13 @@ struct LoginPage {
       this.showToast('请输入手机号和密码')
       return
     }
-    const user = await this.userDao.getUserByPhoneAndPassword(this.phoneNumber, this.password)
+    const normalizedPhone = this.phoneNumber.trim()
+    const normalizedPassword = this.password.trim()
+    if (!normalizedPhone || !normalizedPassword) {
+      this.showToast('请先输入手机号和密码')
+      return
+    }
+    const user = await this.userDao.getUserByPhoneAndPassword(normalizedPhone, normalizedPassword)
     if (!user) {
       this.showToast('手机号或密码错误')
       return
@@ -73,15 +80,20 @@ struct LoginPage {
       this.showToast('请完整填写手机号和验证码')
       return
     }
-    const result = await this.smsService.verifyCode(this.phoneNumber, this.verifyCode)
+    const normalizedPhone = this.phoneNumber.trim()
+    const normalizedCode = this.verifyCode.trim()
+    if (!normalizedPhone || !normalizedCode) {
+      this.showToast('请完整填写手机号和验证码')
+      return
+    }
+    const result = await this.smsService.verifyCode(normalizedPhone, normalizedCode)
     if (!result.success) {
       this.showToast(result.message)
       return
     }
-    const user = await this.userDao.getUserByPhone(this.phoneNumber)
+    let user = await this.userDao.getUserByPhone(normalizedPhone)
     if (!user) {
-      this.showToast('该手机号未注册，请先注册')
-      return
+      user = await this.autoRegisterByPhone(normalizedPhone)
     }
     if (this.entryRole === UserRole.RECRUITER && user.role !== UserRole.RECRUITER) {
       this.showToast('当前入口为招聘者登录，请使用 HR 账号')
@@ -90,9 +102,23 @@ struct LoginPage {
     await this.loginSuccess(user)
   }
 
+  async autoRegisterByPhone(phone: string): Promise<UserProfile> {
+    const newUser: UserProfile = {
+      userId: `${this.entryRole}_${phone}`,
+      phone: phone,
+      role: this.entryRole,
+      isGuest: false,
+      password: ''
+    }
+    await this.userDao.insertUser(newUser)
+    const insertedUser = await this.userDao.getUserById(newUser.userId)
+    return insertedUser || newUser
+  }
+
   async handleThirdPartyLogin(platform: string): Promise<void> {
     try {
-      const authResult = await this.thirdPartyAuthService.authorize(platform)
+      const context = getContext(this) as common.UIAbilityContext
+      const authResult = await this.thirdPartyAuthService.authorize(platform, context)
       if (!authResult.success) {
         this.showToast('第三方授权失败，请稍后重试')
         return
@@ -122,17 +148,39 @@ struct LoginPage {
     AppState.currentUser = guest
     AppState.isGuest = true
     AppState.isLoggedIn = false
+    AppState.syncToStorage()
     router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })
   }
 
   async loginSuccess(user: UserProfile): Promise<void> {
     await this.userDao.logoutAll()
-    AppState.currentUser = user
+    await this.userDao.markUserLoggedIn(user.userId)
+    let nextUser = await this.userDao.getUserById(user.userId)
+    if (!nextUser) {
+      nextUser = user
+    }
+    if (!nextUser.studentType) {
+      const remembered = AppState.getRememberedStudentType(nextUser.phone || '')
+      if (remembered === StudentType.CURRENT || remembered === StudentType.GRADUATING) {
+        await this.userDao.updateStudentType(nextUser.userId, remembered as StudentType)
+        const repairedUser = await this.userDao.getUserById(nextUser.userId)
+        if (repairedUser) {
+          nextUser = repairedUser
+        } else {
+          nextUser.studentType = remembered as StudentType
+        }
+      }
+    }
+    if (nextUser.studentType) {
+      AppState.rememberStudentType(nextUser.phone || '', nextUser.studentType)
+    }
+    AppState.currentUser = nextUser
     AppState.isLoggedIn = true
     AppState.isGuest = false
-    if (user.role === UserRole.RECRUITER) {
+    AppState.syncToStorage()
+    if (nextUser.role === UserRole.RECRUITER) {
       router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_MAIN })
-    } else if (!user.studentType) {
+    } else if (!nextUser.studentType) {
       router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
     } else {
       router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })

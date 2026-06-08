@@ -1,5 +1,7 @@
+import { common } from '@kit.AbilityKit'
 import { photoAccessHelper } from '@kit.MediaLibraryKit'
 import picker from '@ohos.file.picker'
+import { LocalFileService } from './LocalFileService'
 
 export interface PickedDocument {
   uri: string
@@ -21,8 +23,8 @@ export class PickerService {
     return selected
   }
 
-  static async pickSingleDocument(): Promise<PickedDocument> {
-    const documentPicker = new picker.DocumentViewPicker()
+  static async pickSingleDocument(context?: common.UIAbilityContext): Promise<PickedDocument> {
+    const documentPicker = context ? new picker.DocumentViewPicker(context) : new picker.DocumentViewPicker()
     const options = new picker.DocumentSelectOptions()
     options.maxSelectNumber = 1
     options.fileSuffixFilters = ['.pdf', '.txt', '.md']
@@ -31,8 +33,7 @@ export class PickerService {
     if (!uri) {
       throw new Error('No document selected')
     }
-    const slashIndex: number = uri.lastIndexOf('/')
-    const fileName: string = slashIndex >= 0 ? uri.substring(slashIndex + 1) : uri
+    const fileName: string = LocalFileService.decodeDisplayName(uri)
     return {
       uri: uri,
       fileName: fileName

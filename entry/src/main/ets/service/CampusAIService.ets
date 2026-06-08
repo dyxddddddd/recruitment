@@ -20,10 +20,19 @@ export interface CampusAIResumeExperience {
   endTime: string
 }
 
+export interface CampusAIResumeEducation {
+  schoolName: string
+  major: string
+  degree: string
+  startYear: string
+  endYear: string
+}
+
 export interface CampusAIResumeParseResult {
   realName: string
   phone: string
   email: string
+  currentCity: string
   school: string
   major: string
   education: string
@@ -32,6 +41,7 @@ export interface CampusAIResumeParseResult {
   expectedSalary: string
   skills: string[]
   selfIntro: string
+  educationList: CampusAIResumeEducation[]
   experiences: CampusAIResumeExperience[]
   uncertainFields: string[]
 }
@@ -131,9 +141,13 @@ export class CampusAIService {
     }
     return DeepSeekService.chatJson<CampusAITranslationResult>(
       [
-        'You are a resume optimization assistant for Chinese college students.',
-        'Translate campus experiences into recruiting-friendly professional language.',
-        'Do not fabricate achievements or numbers.',
+        'You are a Chinese resume rewriting assistant for campus recruiting.',
+        'Rewrite student-style experience descriptions into concise, recruiter-friendly, business-oriented Chinese resume bullets.',
+        'Use professional industry wording that enterprises can understand, remove overly colloquial student tone, and keep the content suitable for direct resume submission.',
+        'Preserve all real facts, metrics, scope, and outcomes from the input. Do not fabricate company names, business impact, technologies, responsibilities, achievements, or numbers.',
+        'If the input already contains metrics such as DAU, timing, conversion, retention, or percentage changes, keep them and present them in a polished enterprise style.',
+        'Output only one polished Chinese sentence or one compact Chinese bullet, not English, not explanations.',
+        'Also extract skills or keywords explicitly supported by the input.',
         'Return JSON only with translated, skills, confidence.'
       ].join(' '),
       JSON.stringify(payload)
@@ -145,8 +159,13 @@ export class CampusAIService {
       [
         'You are a Chinese resume parsing assistant.',
         'Extract structured fields from the resume text without fabricating missing information.',
-        'Return JSON only with realName, phone, email, school, major, education, graduationYear, expectedPosition, expectedSalary, skills, selfIntro, experiences, uncertainFields.',
+        'Return JSON only with realName, phone, email, currentCity, school, major, education, graduationYear, expectedPosition, expectedSalary, skills, selfIntro, educationList, experiences, uncertainFields.',
+        'educationList items must include schoolName, major, degree, startYear, endYear.',
         'Each experience must include type, companyName, projectName, role, description, translatedDescription, startTime, endTime.'
+        ,
+        'uncertainFields must list fields that need human review.',
+        'Use plain field names like realName, currentCity, school, selfIntro, skills for top-level fields.',
+        'Use indexed paths like educationList.0.schoolName or experiences.1.projectName for nested items.'
       ].join(' '),
       text
     )
@@ -229,8 +248,12 @@ export class CampusAIService {
         'You are a university class schedule parsing assistant.',
         'Infer weekly free time slots from OCR text.',
         'Return JSON only with summary and freeSlots.',
-        'Each free slot must include dayOfWeek, startPeriod, endPeriod, label.',
-        'dayOfWeek uses 0 for Sunday and 1 for Monday.'
+        'Each free slot must include dayOfWeek, startHour, startMinute, endHour, endMinute, label.',
+        'dayOfWeek uses 0 for Sunday and 1 for Monday through 6 for Saturday.',
+        'startHour/endHour use 24-hour format (0-23). startMinute/endMinute use 0-59.',
+        'label example: "周一 09:00-12:00", "周三 14:00-18:30".',
+        'If no specific time is given, infer reasonable defaults (morning 09:00-12:00, afternoon 14:00-18:00, evening 19:00-22:00).',
+        'Only include slots where the student has NO classes.'
       ].join(' '),
       text
     )

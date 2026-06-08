@@ -1,18 +1,13 @@
-// 企业与社区数据模型
-
 export interface CompanyInfo {
   companyId: string
   name: string
   logo: string
   industry: string
-  scale: string                     // 规模
+  scale: string
   description: string
   address: string
-  // 招聘计划
   recruitmentPlan?: RecruitmentPlan
-  // 宣讲会
   careerTalks: CareerTalk[]
-  // 校友图谱数据
   alumniNetwork?: AlumniNode[]
 }
 
@@ -37,29 +32,31 @@ export interface CareerTalk {
 
 export interface AlumniNode {
   alumniId: string
-  name: string                    // 匿名显示
+  name: string
   school: string
   major: string
   graduationYear: string
   department: string
   position: string
-  // 拓扑图连线关系
   connections: string[]
 }
 
-// 社区帖子
 export interface CommunityPost {
   postId: string
   userId: string
-  school: string                    // 所属学校
+  school: string
   title: string
   content: string
-  category: 'interview' | 'companion' | 'discussion'  // 面经 / 找搭子 / 讨论
+  category: 'interview' | 'companion' | 'discussion'
   isAnonymous: boolean
   tags: string[]
   likeCount: number
+  favoriteCount: number
   commentCount: number
   createTime: number
+  authorName?: string
+  liked?: boolean
+  favorited?: boolean
 }
 
 export interface PostComment {
@@ -69,4 +66,6 @@ export interface PostComment {
   content: string
   isAnonymous: boolean
   createTime: number
+  authorName?: string
+  postTitle?: string     // 所属帖子标题（用于"我的评论"展示）
 }

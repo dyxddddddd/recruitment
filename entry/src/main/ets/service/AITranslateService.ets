@@ -5,41 +5,41 @@ export interface ExperienceInput {
   type: string
 }
 
-export interface TranslatedExperience {
+export interface RewrittenExperience {
   description: string
-  translatedDescription: string
+  rewrittenDescription: string
   skills: string[]
 }
 
-export interface TranslateResult {
+export interface ExperienceRewriteResult {
   original: string
-  translated: string
+  rewritten: string
   matchedPattern: string
   skills: string[]
   confidence: 'high' | 'medium' | 'low'
 }
 
-export async function translateStudentExperience(description: string, type: string = 'project'): Promise<TranslateResult> {
+export async function rewriteStudentExperience(description: string, type: string = 'project'): Promise<ExperienceRewriteResult> {
   const result = await CampusAIService.translateCampusExperience(description, type)
   return {
     original: description,
-    translated: result.translated || description,
-    matchedPattern: 'deepseek',
+    rewritten: result.translated || description,
+    matchedPattern: 'deepseek-rewrite',
     skills: result.skills || [],
     confidence: result.confidence || 'medium'
   }
 }
 
-export async function translateExperienceList(experiences: ExperienceInput[]): Promise<TranslatedExperience[]> {
-  const translated: TranslatedExperience[] = []
+export async function rewriteExperienceList(experiences: ExperienceInput[]): Promise<RewrittenExperience[]> {
+  const rewritten: RewrittenExperience[] = []
   for (let i = 0; i < experiences.length; i++) {
     const item = experiences[i]
-    const result = await translateStudentExperience(item.description, item.type)
-    translated.push({
+    const result = await rewriteStudentExperience(item.description, item.type)
+    rewritten.push({
       description: item.description,
-      translatedDescription: result.translated,
+      rewrittenDescription: result.rewritten,
       skills: result.skills
     })
   }
-  return translated
+  return rewritten
 }

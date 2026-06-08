@@ -10,6 +10,12 @@ struct IdentityGuidePage {
   @State isConfirming: boolean = false
   private userDao: UserDao = new UserDao()
 
+  aboutToAppear(): void {
+    if (AppState.currentUser?.studentType) {
+      router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })
+    }
+  }
+
   async handleConfirm(): Promise<void> {
     if (!this.selectedType || !AppState.currentUser) {
       return
@@ -17,6 +23,16 @@ struct IdentityGuidePage {
     this.isConfirming = true
     AppState.currentUser.studentType = this.selectedType
     await this.userDao.updateStudentType(AppState.currentUser.userId, this.selectedType)
+    await this.userDao.updateStudentTypeByPhone(AppState.currentUser.phone || '', this.selectedType)
+    await this.userDao.markUserLoggedIn(AppState.currentUser.userId)
+    const refreshedUser = await this.userDao.getUserById(AppState.currentUser.userId)
+    if (refreshedUser) {
+      AppState.currentUser = refreshedUser
+    }
+    AppState.isLoggedIn = true
+    AppState.isGuest = false
+    AppState.rememberStudentType(AppState.currentUser?.phone || '', this.selectedType)
+    AppState.syncToStorage()
     router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })
   }
 

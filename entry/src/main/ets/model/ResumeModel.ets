@@ -46,7 +46,7 @@ export interface ExperienceItem {
   description: string
   startTime: string
   endTime: string
-  // 创新点五：校园经历→企业术语翻译
+  // 创新点五：校园经历→企业化表述优化
   translatedDescription?: string
 }
 
@@ -75,7 +75,11 @@ export interface CourseItem {
 
 export interface FreeTimeSlot {
   dayOfWeek: number
-  startPeriod: number
-  endPeriod: number
-  label: string                     // "周一上午", "周三下午"等
+  startHour?: number
+  startMinute?: number
+  endHour?: number
+  endMinute?: number
+  startPeriod?: number
+  endPeriod?: number
+  label: string                    // "周一 09:00-12:00", "周三 14:00-18:30" 等
 }

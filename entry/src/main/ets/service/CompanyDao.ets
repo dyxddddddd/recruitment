@@ -1,9 +1,67 @@
-// 企业与社区数据访问对象
-
 import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper } from '../database/DatabaseHelper'
-import { TABLE_COMPANY, TABLE_CAREER_TALK, TABLE_COMMUNITY_POST, TABLE_POST_COMMENT } from '../database/Tables'
-import { CompanyInfo, CareerTalk, AlumniNode, CommunityPost, PostComment } from '../model/CompanyModel'
+import {
+  TABLE_CAREER_TALK,
+  TABLE_COMMUNITY_POST,
+  TABLE_COMPANY,
+  TABLE_POST_COMMENT,
+  TABLE_POST_FAVORITE,
+  TABLE_POST_LIKE,
+  TABLE_USER
+} from '../database/Tables'
+import { AlumniNode, CareerTalk, CommunityPost, CompanyInfo, PostComment, RecruitmentPlan } from '../model/CompanyModel'
+
+const COMMUNITY_SEED_POSTS: CommunityPost[] = [
+  {
+    postId: 'post_runtime_seed_001',
+    userId: 'student_demo_001',
+    school: 'Central South University',
+    title: '腾讯前端一面都问了什么？',
+    content: '这周刚面完，主要围绕项目拆解、性能优化、跨端适配和八股基础展开，整体更关注你真实做过什么。',
+    category: 'interview',
+    isAnonymous: true,
+    tags: ['腾讯', '前端', '面经'],
+    likeCount: 6,
+    favoriteCount: 4,
+    commentCount: 0,
+    createTime: Date.now() - 2 * 60 * 60 * 1000,
+    authorName: '校园同学'
+  },
+  {
+    postId: 'post_runtime_seed_002',
+    userId: 'student_demo_001',
+    school: 'Central South University',
+    title: '找一个后端秋招搭子互相监督',
+    content: '想找同校一起刷八股、改简历、模拟面试的同学，最好方向是 Java / 后端开发。',
+    category: 'companion',
+    isAnonymous: true,
+    tags: ['后端', '秋招', '搭子'],
+    likeCount: 3,
+    favoriteCount: 1,
+    commentCount: 0,
+    createTime: Date.now() - 5 * 60 * 60 * 1000,
+    authorName: '校园同学'
+  },
+  {
+    postId: 'post_runtime_seed_003',
+    userId: 'student_demo_001',
+    school: 'Hunan University',
+    title: '产品岗暑期实习笔试交流',
+    content: '有没有同校同学也投了产品暑期？想交流一下笔试题型和群面准备方式。',
+    category: 'discussion',
+    isAnonymous: true,
+    tags: ['产品', '暑期实习', '笔试'],
+    likeCount: 5,
+    favoriteCount: 2,
+    commentCount: 0,
+    createTime: Date.now() - 8 * 60 * 60 * 1000,
+    authorName: '校园同学'
+  }
+]
+
+function escapeSql(value: string): string {
+  return value.replace(/'/g, "''")
+}
 
 export class CompanyDao {
   private helper: DatabaseHelper = DatabaseHelper.getInstance()
@@ -31,6 +89,7 @@ export class CompanyDao {
       company.careerTalks = await this.getCareerTalksByCompany(companyId)
       return company
     }
+    rs.close()
     return null
   }
 
@@ -40,17 +99,7 @@ export class CompanyDao {
     const rs = await store.querySql(sql)
     const list: CareerTalk[] = []
     while (rs.goToNextRow()) {
-      list.push({
-        talkId: rs.getString(rs.getColumnIndex('talk_id')),
-        companyId: rs.getString(rs.getColumnIndex('company_id')),
-        companyName: rs.getString(rs.getColumnIndex('company_name')),
-        title: rs.getString(rs.getColumnIndex('title')),
-        date: rs.getString(rs.getColumnIndex('date')),
-        time: rs.getString(rs.getColumnIndex('time')),
-        location: rs.getString(rs.getColumnIndex('location')),
-        isOnline: rs.getLong(rs.getColumnIndex('is_online')) === 1,
-        onlineLink: rs.getString(rs.getColumnIndex('online_link'))
-      })
+      list.push(this.rowToTalk(rs))
     }
     rs.close()
     return list
@@ -64,50 +113,82 @@ export class CompanyDao {
     const rs = await store.query(predicates)
     const list: CareerTalk[] = []
     while (rs.goToNextRow()) {
-      list.push({
-        talkId: rs.getString(rs.getColumnIndex('talk_id')),
-        companyId: rs.getString(rs.getColumnIndex('company_id')),
-        companyName: rs.getString(rs.getColumnIndex('company_name')),
-        title: rs.getString(rs.getColumnIndex('title')),
-        date: rs.getString(rs.getColumnIndex('date')),
-        time: rs.getString(rs.getColumnIndex('time')),
-        location: rs.getString(rs.getColumnIndex('location')),
-        isOnline: rs.getLong(rs.getColumnIndex('is_online')) === 1,
-        onlineLink: rs.getString(rs.getColumnIndex('online_link'))
-      })
+      list.push(this.rowToTalk(rs))
     }
     rs.close()
     return list
   }
 
-  // ---- 社区 ----
-
-  async getPosts(school?: string): Promise<CommunityPost[]> {
-    const store = await this.helper.getStore()
-    const predicates = new relationalStore.RdbPredicates(TABLE_COMMUNITY_POST)
-    if (school) {
-      predicates.equalTo('school', school)
+  async getPosts(school?: string, viewerId?: string): Promise<CommunityPost[]> {
+    if (!school) {
+      return []
     }
-    predicates.orderByDesc('create_time')
-    const rs = await store.query(predicates)
+    const store = await this.helper.getStore()
+    const safeSchool = escapeSql(school)
+    const sql = `
+      SELECT p.*, u.real_name
+      FROM ${TABLE_COMMUNITY_POST} p
+      LEFT JOIN ${TABLE_USER} u ON u.user_id = p.user_id
+      WHERE p.school = '${safeSchool}'
+      ORDER BY p.create_time DESC
+    `
+    const rs = await store.querySql(sql)
+    const likedSet: Set<string> = viewerId ? await this.loadReactionSet(TABLE_POST_LIKE, viewerId) : new Set<string>()
+    const favoriteSet: Set<string> = viewerId ? await this.loadReactionSet(TABLE_POST_FAVORITE, viewerId) : new Set<string>()
     const posts: CommunityPost[] = []
     while (rs.goToNextRow()) {
+      const postId = rs.getString(rs.getColumnIndex('post_id'))
       posts.push({
-        postId: rs.getString(rs.getColumnIndex('post_id')),
+        postId: postId,
         userId: rs.getString(rs.getColumnIndex('user_id')),
         school: rs.getString(rs.getColumnIndex('school')),
         title: rs.getString(rs.getColumnIndex('title')),
         content: rs.getString(rs.getColumnIndex('content')),
         category: rs.getString(rs.getColumnIndex('category')) as 'interview' | 'companion' | 'discussion',
         isAnonymous: rs.getLong(rs.getColumnIndex('is_anonymous')) === 1,
-        tags: JSON.parse(rs.getString(rs.getColumnIndex('tags')) || '[]'),
+        tags: JSON.parse(rs.getString(rs.getColumnIndex('tags')) || '[]') as string[],
         likeCount: rs.getLong(rs.getColumnIndex('like_count')),
+        favoriteCount: rs.getLong(rs.getColumnIndex('favorite_count')),
         commentCount: rs.getLong(rs.getColumnIndex('comment_count')),
-        createTime: rs.getLong(rs.getColumnIndex('create_time'))
+        createTime: rs.getLong(rs.getColumnIndex('create_time')),
+        authorName: rs.getString(rs.getColumnIndex('real_name')),
+        liked: likedSet.has(postId),
+        favorited: favoriteSet.has(postId)
       })
     }
     rs.close()
-    return posts
+    const mergedPosts: CommunityPost[] = []
+    for (let i = 0; i < posts.length; i++) {
+      mergedPosts.push(posts[i])
+    }
+    for (let i = 0; i < COMMUNITY_SEED_POSTS.length; i++) {
+      const seedPost = COMMUNITY_SEED_POSTS[i]
+      if (seedPost.school !== school) {
+        continue
+      }
+      const exists = mergedPosts.some((item: CommunityPost) => item.postId === seedPost.postId)
+      if (!exists) {
+        mergedPosts.push({
+          postId: seedPost.postId,
+          userId: seedPost.userId,
+          school: seedPost.school,
+          title: seedPost.title,
+          content: seedPost.content,
+          category: seedPost.category,
+          isAnonymous: seedPost.isAnonymous,
+          tags: seedPost.tags,
+          likeCount: seedPost.likeCount,
+          favoriteCount: seedPost.favoriteCount,
+          commentCount: seedPost.commentCount,
+          createTime: seedPost.createTime,
+          authorName: seedPost.authorName,
+          liked: likedSet.has(seedPost.postId),
+          favorited: favoriteSet.has(seedPost.postId)
+        })
+      }
+    }
+    mergedPosts.sort((a: CommunityPost, b: CommunityPost) => b.createTime - a.createTime)
+    return mergedPosts
   }
 
   async insertPost(post: CommunityPost): Promise<void> {
@@ -122,10 +203,105 @@ export class CompanyDao {
       is_anonymous: post.isAnonymous ? 1 : 0,
       tags: JSON.stringify(post.tags),
       like_count: post.likeCount,
+      favorite_count: post.favoriteCount,
       comment_count: post.commentCount,
       create_time: post.createTime
     }
     await store.insert(TABLE_COMMUNITY_POST, vb)
+  }
+
+  async updatePost(post: CommunityPost): Promise<void> {
+    const store = await this.helper.getStore()
+    const safePostId = escapeSql(post.postId)
+    const safeUserId = escapeSql(post.userId)
+    const sql = `
+      UPDATE ${TABLE_COMMUNITY_POST}
+      SET title = '${escapeSql(post.title)}',
+          content = '${escapeSql(post.content)}',
+          category = '${post.category}',
+          is_anonymous = ${post.isAnonymous ? 1 : 0},
+          tags = '${escapeSql(JSON.stringify(post.tags))}'
+      WHERE post_id = '${safePostId}' AND user_id = '${safeUserId}'
+    `
+    await store.executeSql(sql)
+  }
+
+  async deletePost(postId: string, userId: string): Promise<void> {
+    const store = await this.helper.getStore()
+    const postPredicates = new relationalStore.RdbPredicates(TABLE_COMMUNITY_POST)
+    postPredicates.equalTo('post_id', postId)
+    postPredicates.equalTo('user_id', userId)
+    await store.delete(postPredicates)
+
+    const commentPredicates = new relationalStore.RdbPredicates(TABLE_POST_COMMENT)
+    commentPredicates.equalTo('post_id', postId)
+    await store.delete(commentPredicates)
+
+    const likePredicates = new relationalStore.RdbPredicates(TABLE_POST_LIKE)
+    likePredicates.equalTo('post_id', postId)
+    await store.delete(likePredicates)
+
+    const favoritePredicates = new relationalStore.RdbPredicates(TABLE_POST_FAVORITE)
+    favoritePredicates.equalTo('post_id', postId)
+    await store.delete(favoritePredicates)
+  }
+
+  async deleteComment(commentId: string, userId: string): Promise<void> {
+    const store = await this.helper.getStore()
+    const commentPredicates = new relationalStore.RdbPredicates(TABLE_POST_COMMENT)
+    commentPredicates.equalTo('comment_id', commentId)
+    commentPredicates.equalTo('user_id', userId)
+    const rs = await store.query(commentPredicates)
+    let postId: string = ''
+    if (rs.goToFirstRow()) {
+      postId = rs.getString(rs.getColumnIndex('post_id'))
+    }
+    rs.close()
+    if (!postId) {
+      return
+    }
+    await store.delete(commentPredicates)
+    await this.updatePostCounter(postId, 'comment_count', -1)
+  }
+
+  async togglePostLike(postId: string, userId: string): Promise<boolean> {
+    const store = await this.helper.getStore()
+    const exists = await this.hasReaction(TABLE_POST_LIKE, userId, postId)
+    if (exists) {
+      const predicates = new relationalStore.RdbPredicates(TABLE_POST_LIKE)
+      predicates.equalTo('user_id', userId)
+      predicates.equalTo('post_id', postId)
+      await store.delete(predicates)
+      await this.updatePostCounter(postId, 'like_count', -1)
+      return false
+    }
+    await store.insert(TABLE_POST_LIKE, {
+      user_id: userId,
+      post_id: postId,
+      create_time: Date.now()
+    })
+    await this.updatePostCounter(postId, 'like_count', 1)
+    return true
+  }
+
+  async togglePostFavorite(postId: string, userId: string): Promise<boolean> {
+    const store = await this.helper.getStore()
+    const exists = await this.hasReaction(TABLE_POST_FAVORITE, userId, postId)
+    if (exists) {
+      const predicates = new relationalStore.RdbPredicates(TABLE_POST_FAVORITE)
+      predicates.equalTo('user_id', userId)
+      predicates.equalTo('post_id', postId)
+      await store.delete(predicates)
+      await this.updatePostCounter(postId, 'favorite_count', -1)
+      return false
+    }
+    await store.insert(TABLE_POST_FAVORITE, {
+      user_id: userId,
+      post_id: postId,
+      create_time: Date.now()
+    })
+    await this.updatePostCounter(postId, 'favorite_count', 1)
+    return true
   }
 
   async insertComment(comment: PostComment): Promise<void> {
@@ -139,14 +315,20 @@ export class CompanyDao {
       create_time: comment.createTime
     }
     await store.insert(TABLE_POST_COMMENT, vb)
+    await this.updatePostCounter(comment.postId, 'comment_count', 1)
   }
 
   async getComments(postId: string): Promise<PostComment[]> {
     const store = await this.helper.getStore()
-    const predicates = new relationalStore.RdbPredicates(TABLE_POST_COMMENT)
-    predicates.equalTo('post_id', postId)
-    predicates.orderByAsc('create_time')
-    const rs = await store.query(predicates)
+    const safePostId = escapeSql(postId)
+    const sql = `
+      SELECT c.*, u.real_name
+      FROM ${TABLE_POST_COMMENT} c
+      LEFT JOIN ${TABLE_USER} u ON u.user_id = c.user_id
+      WHERE c.post_id = '${safePostId}'
+      ORDER BY c.create_time ASC
+    `
+    const rs = await store.querySql(sql)
     const list: PostComment[] = []
     while (rs.goToNextRow()) {
       list.push({
@@ -155,11 +337,215 @@ export class CompanyDao {
         userId: rs.getString(rs.getColumnIndex('user_id')),
         content: rs.getString(rs.getColumnIndex('content')),
         isAnonymous: rs.getLong(rs.getColumnIndex('is_anonymous')) === 1,
-        createTime: rs.getLong(rs.getColumnIndex('create_time'))
+        createTime: rs.getLong(rs.getColumnIndex('create_time')),
+        authorName: rs.getString(rs.getColumnIndex('real_name'))
       })
     }
     rs.close()
     return list
+  }
+
+  async getCommentsByUser(userId: string): Promise<PostComment[]> {
+    const store = await this.helper.getStore()
+    const safeUserId = escapeSql(userId)
+    const sql = `
+      SELECT c.*, u.real_name, p.title AS post_title
+      FROM ${TABLE_POST_COMMENT} c
+      LEFT JOIN ${TABLE_USER} u ON u.user_id = c.user_id
+      LEFT JOIN ${TABLE_COMMUNITY_POST} p ON p.post_id = c.post_id
+      WHERE c.user_id = '${safeUserId}'
+      ORDER BY c.create_time DESC
+    `
+    const rs = await store.querySql(sql)
+    const list: PostComment[] = []
+    while (rs.goToNextRow()) {
+      list.push({
+        commentId: rs.getString(rs.getColumnIndex('comment_id')),
+        postId: rs.getString(rs.getColumnIndex('post_id')),
+        userId: rs.getString(rs.getColumnIndex('user_id')),
+        content: rs.getString(rs.getColumnIndex('content')),
+        isAnonymous: rs.getLong(rs.getColumnIndex('is_anonymous')) === 1,
+        createTime: rs.getLong(rs.getColumnIndex('create_time')),
+        authorName: rs.getString(rs.getColumnIndex('real_name')),
+        postTitle: rs.getString(rs.getColumnIndex('post_title'))
+      })
+    }
+    rs.close()
+    return list
+  }
+
+  async getFavoriteCountByUser(userId: string): Promise<number> {
+    const store = await this.helper.getStore()
+    const safeUserId = escapeSql(userId)
+    const sql = `SELECT COUNT(*) AS favorite_count FROM ${TABLE_POST_FAVORITE} WHERE user_id = '${safeUserId}'`
+    const rs = await store.querySql(sql)
+    let count = 0
+    if (rs.goToFirstRow()) {
+      count = rs.getLong(0)
+    }
+    rs.close()
+    return count
+  }
+
+  async getPostsByUser(userId: string, viewerId?: string): Promise<CommunityPost[]> {
+    const store = await this.helper.getStore()
+    const safeUserId = escapeSql(userId)
+    const sql = `
+      SELECT p.*, u.real_name
+      FROM ${TABLE_COMMUNITY_POST} p
+      LEFT JOIN ${TABLE_USER} u ON u.user_id = p.user_id
+      WHERE p.user_id = '${safeUserId}'
+      ORDER BY p.create_time DESC
+    `
+    return this.queryPostsBySql(sql, viewerId)
+  }
+
+  async getLikedPostsByUser(userId: string): Promise<CommunityPost[]> {
+    const store = await this.helper.getStore()
+    const safeUserId = escapeSql(userId)
+    const sql = `
+      SELECT p.*, u.real_name
+      FROM ${TABLE_POST_LIKE} l
+      INNER JOIN ${TABLE_COMMUNITY_POST} p ON p.post_id = l.post_id
+      LEFT JOIN ${TABLE_USER} u ON u.user_id = p.user_id
+      WHERE l.user_id = '${safeUserId}'
+      ORDER BY l.create_time DESC
+    `
+    const posts = await this.queryPostsBySql(sql, userId)
+    return this.mergeSeedReactionPosts(posts, userId, TABLE_POST_LIKE)
+  }
+
+  async getFavoritedPostsByUser(userId: string): Promise<CommunityPost[]> {
+    const store = await this.helper.getStore()
+    const safeUserId = escapeSql(userId)
+    const sql = `
+      SELECT p.*, u.real_name
+      FROM ${TABLE_POST_FAVORITE} f
+      INNER JOIN ${TABLE_COMMUNITY_POST} p ON p.post_id = f.post_id
+      LEFT JOIN ${TABLE_USER} u ON u.user_id = p.user_id
+      WHERE f.user_id = '${safeUserId}'
+      ORDER BY f.create_time DESC
+    `
+    const posts = await this.queryPostsBySql(sql, userId)
+    return this.mergeSeedReactionPosts(posts, userId, TABLE_POST_FAVORITE)
+  }
+
+  private async hasReaction(tableName: string, userId: string, postId: string): Promise<boolean> {
+    const store = await this.helper.getStore()
+    const predicates = new relationalStore.RdbPredicates(tableName)
+    predicates.equalTo('user_id', userId)
+    predicates.equalTo('post_id', postId)
+    const rs = await store.query(predicates)
+    const exists = rs.rowCount > 0
+    rs.close()
+    return exists
+  }
+
+  private async loadReactionSet(tableName: string, userId: string): Promise<Set<string>> {
+    const store = await this.helper.getStore()
+    const predicates = new relationalStore.RdbPredicates(tableName)
+    predicates.equalTo('user_id', userId)
+    const rs = await store.query(predicates)
+    const result: Set<string> = new Set()
+    while (rs.goToNextRow()) {
+      result.add(rs.getString(rs.getColumnIndex('post_id')))
+    }
+    rs.close()
+    return result
+  }
+
+  private async queryPostsBySql(sql: string, viewerId?: string): Promise<CommunityPost[]> {
+    const store = await this.helper.getStore()
+    const rs = await store.querySql(sql)
+    const likedSet: Set<string> = viewerId ? await this.loadReactionSet(TABLE_POST_LIKE, viewerId) : new Set<string>()
+    const favoriteSet: Set<string> = viewerId ? await this.loadReactionSet(TABLE_POST_FAVORITE, viewerId) : new Set<string>()
+    const posts: CommunityPost[] = []
+    while (rs.goToNextRow()) {
+      const postId = rs.getString(rs.getColumnIndex('post_id'))
+      posts.push({
+        postId: postId,
+        userId: rs.getString(rs.getColumnIndex('user_id')),
+        school: rs.getString(rs.getColumnIndex('school')),
+        title: rs.getString(rs.getColumnIndex('title')),
+        content: rs.getString(rs.getColumnIndex('content')),
+        category: rs.getString(rs.getColumnIndex('category')) as 'interview' | 'companion' | 'discussion',
+        isAnonymous: rs.getLong(rs.getColumnIndex('is_anonymous')) === 1,
+        tags: JSON.parse(rs.getString(rs.getColumnIndex('tags')) || '[]') as string[],
+        likeCount: rs.getLong(rs.getColumnIndex('like_count')),
+        favoriteCount: rs.getLong(rs.getColumnIndex('favorite_count')),
+        commentCount: rs.getLong(rs.getColumnIndex('comment_count')),
+        createTime: rs.getLong(rs.getColumnIndex('create_time')),
+        authorName: rs.getString(rs.getColumnIndex('real_name')),
+        liked: likedSet.has(postId),
+        favorited: favoriteSet.has(postId)
+      })
+    }
+    rs.close()
+    return posts
+  }
+
+  private async mergeSeedReactionPosts(posts: CommunityPost[], userId: string, reactionTable: string): Promise<CommunityPost[]> {
+    const reactionSet = await this.loadReactionSet(reactionTable, userId)
+    const likedSet = await this.loadReactionSet(TABLE_POST_LIKE, userId)
+    const favoriteSet = await this.loadReactionSet(TABLE_POST_FAVORITE, userId)
+    const merged: CommunityPost[] = []
+    for (let i = 0; i < posts.length; i++) {
+      merged.push(posts[i])
+    }
+    for (let i = 0; i < COMMUNITY_SEED_POSTS.length; i++) {
+      const seedPost = COMMUNITY_SEED_POSTS[i]
+      if (!reactionSet.has(seedPost.postId)) {
+        continue
+      }
+      const exists = merged.some((item: CommunityPost) => item.postId === seedPost.postId)
+      if (exists) {
+        continue
+      }
+      merged.push({
+        postId: seedPost.postId,
+        userId: seedPost.userId,
+        school: seedPost.school,
+        title: seedPost.title,
+        content: seedPost.content,
+        category: seedPost.category,
+        isAnonymous: seedPost.isAnonymous,
+        tags: seedPost.tags,
+        likeCount: seedPost.likeCount,
+        favoriteCount: seedPost.favoriteCount,
+        commentCount: seedPost.commentCount,
+        createTime: seedPost.createTime,
+        authorName: seedPost.authorName,
+        liked: likedSet.has(seedPost.postId),
+        favorited: favoriteSet.has(seedPost.postId)
+      })
+    }
+    merged.sort((a: CommunityPost, b: CommunityPost) => b.createTime - a.createTime)
+    return merged
+  }
+
+  private async updatePostCounter(postId: string, columnName: string, delta: number): Promise<void> {
+    const store = await this.helper.getStore()
+    const safePostId = escapeSql(postId)
+    const sql = `
+      UPDATE ${TABLE_COMMUNITY_POST}
+      SET ${columnName} = CASE WHEN ${columnName} + (${delta}) < 0 THEN 0 ELSE ${columnName} + (${delta}) END
+      WHERE post_id = '${safePostId}'
+    `
+    await store.executeSql(sql)
+  }
+
+  private rowToTalk(row: relationalStore.ResultSet): CareerTalk {
+    return {
+      talkId: row.getString(row.getColumnIndex('talk_id')),
+      companyId: row.getString(row.getColumnIndex('company_id')),
+      companyName: row.getString(row.getColumnIndex('company_name')),
+      title: row.getString(row.getColumnIndex('title')),
+      date: row.getString(row.getColumnIndex('date')),
+      time: row.getString(row.getColumnIndex('time')),
+      location: row.getString(row.getColumnIndex('location')),
+      isOnline: row.getLong(row.getColumnIndex('is_online')) === 1,
+      onlineLink: row.getString(row.getColumnIndex('online_link'))
+    }
   }
 
   private rowToCompany(row: relationalStore.ResultSet): CompanyInfo {
@@ -172,10 +558,10 @@ export class CompanyDao {
       description: row.getString(row.getColumnIndex('description')),
       address: row.getString(row.getColumnIndex('address')),
       recruitmentPlan: row.getString(row.getColumnIndex('recruitment_plan'))
-        ? JSON.parse(row.getString(row.getColumnIndex('recruitment_plan')))
+        ? JSON.parse(row.getString(row.getColumnIndex('recruitment_plan'))) as RecruitmentPlan
         : undefined,
       alumniNetwork: row.getString(row.getColumnIndex('alumni_network'))
-        ? JSON.parse(row.getString(row.getColumnIndex('alumni_network')))
+        ? JSON.parse(row.getString(row.getColumnIndex('alumni_network'))) as AlumniNode[]
         : undefined,
       careerTalks: []
     }

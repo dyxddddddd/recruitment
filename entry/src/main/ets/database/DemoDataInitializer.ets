@@ -4,7 +4,8 @@ import {
   TABLE_JOB,
   TABLE_COMPANY,
   TABLE_CAREER_TALK,
-  TABLE_COMMUNITY_POST
+  TABLE_COMMUNITY_POST,
+  TABLE_POST_COMMENT
 } from './Tables'
 
 interface SeedJob {
@@ -21,6 +22,11 @@ interface SeedJob {
   city: string
   skills: string[]
   tags: string[]
+  taskStartTime: number
+  taskEndTime: number
+  requiredDayOfWeek: number
+  requiredStartHour: number
+  requiredEndHour: number
 }
 
 interface SeedRecruitmentPlan {
@@ -75,11 +81,36 @@ interface SeedPost {
   isAnonymous: boolean
   tags: string[]
   likeCount: number
+  favoriteCount: number
   commentCount: number
+}
+
+interface SeedComment {
+  commentId: string
+  postId: string
+  userId: string
+  content: string
+  isAnonymous: boolean
 }
 
 function escapeSql(value: string): string {
   return value.replace(/'/g, "''")
+}
+
+function buildNextWeekdayTime(baseTime: number, dayOfWeek: number, hour: number, minute: number = 0): number {
+  const baseDate = new Date(baseTime)
+  const currentDay = baseDate.getDay()
+  let deltaDay = dayOfWeek - currentDay
+  if (deltaDay < 0) {
+    deltaDay += 7
+  }
+  const target = new Date(baseDate.getTime())
+  target.setDate(baseDate.getDate() + deltaDay)
+  target.setHours(hour, minute, 0, 0)
+  if (target.getTime() <= baseTime) {
+    target.setDate(target.getDate() + 7)
+  }
+  return target.getTime()
 }
 
 export class DemoDataInitializer {
@@ -90,6 +121,7 @@ export class DemoDataInitializer {
     await DemoDataInitializer.seedTalks(store)
     await DemoDataInitializer.seedJobs(store, now)
     await DemoDataInitializer.seedPosts(store, now)
+    await DemoDataInitializer.seedComments(store, now)
   }
 
   private static async seedUsers(store: relationalStore.RdbStore, now: number): Promise<void> {
@@ -97,7 +129,7 @@ export class DemoDataInitializer {
       `INSERT OR IGNORE INTO ${TABLE_USER}
       (user_id, phone, role, student_type, real_name, school, major, expected_position, expected_salary, is_guest, password, create_time, update_time, is_login)
       VALUES
-      ('student_demo_001', '13800138000', 'job_seeker', '', '', '', '', '', '', 0, '123456', ${now}, ${now}, 0)`
+      ('student_demo_001', '13800138000', 'job_seeker', 'current', '校园同学', 'Central South University', 'Software Engineering', 'Frontend Intern', '6000', 0, '123456', ${now}, ${now}, 0)`
     )
     await store.executeSql(
       `INSERT OR IGNORE INTO ${TABLE_USER}
@@ -105,9 +137,24 @@ export class DemoDataInitializer {
       VALUES
       ('recruiter_demo_001', '13900139000', 'recruiter', 'Xiaomi Group', 'normal', 0, 'Campus HR', 0, '123456', ${now}, ${now}, 0)`
     )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_USER}
+      (user_id, phone, role, is_guest, password, create_time, update_time, is_login)
+      VALUES
+      ('student_demo_002', '13800001234', 'job_seeker', 0, '123456', ${now}, ${now}, 0)`
+    )
+  }
+
+  private static async resetSeedJobs(store: relationalStore.RdbStore): Promise<void> {
+    await store.executeSql(`DELETE FROM ${TABLE_JOB} WHERE job_id IN (
+      'job_seed_001', 'job_seed_002', 'job_seed_003', 'job_seed_004',
+      'job_seed_005', 'job_seed_006', 'job_seed_007', 'job_seed_008',
+      'job_seed_009', 'job_seed_010', 'job_seed_011', 'job_seed_012'
+    )`)
   }
 
   private static async seedJobs(store: relationalStore.RdbStore, now: number): Promise<void> {
+    await DemoDataInitializer.resetSeedJobs(store)
     const jobs: SeedJob[] = [
       {
         jobId: 'job_seed_001',
@@ -122,37 +169,12 @@ export class DemoDataInitializer {
         workAddress: 'Changsha High-tech Zone',
         city: 'Changsha',
         skills: ['ArkTS', 'TypeScript', 'React'],
-        tags: ['return-offer', 'frontend']
-      },
-      {
-        jobId: 'job_seed_002',
-        recruiterId: 'recruiter_demo_001',
-        companyName: 'Tencent',
-        title: 'Campus Content Operator',
-        category: 'micro_task',
-        description: 'Write content, manage groups, and track event signup data.',
-        educationRequired: 'College or above',
-        salaryRange: '80-120/task',
-        workYearsRequired: 'No limit',
-        workAddress: 'Remote',
-        city: 'Changsha',
-        skills: ['copywriting', 'community', 'excel'],
-        tags: ['remote', 'weekend']
-      },
-      {
-        jobId: 'job_seed_003',
-        recruiterId: 'recruiter_demo_001',
-        companyName: 'MiHoYo',
-        title: 'Python Data Assistant',
-        category: 'micro_task',
-        description: 'Clean tables, process scripts, and organize weekly reports.',
-        educationRequired: 'Bachelor',
-        salaryRange: '200-300/task',
-        workYearsRequired: 'No limit',
-        workAddress: 'Remote',
-        city: 'Shanghai',
-        skills: ['Python', 'Pandas', 'data-cleaning'],
-        tags: ['task-based', 'flexible']
+        tags: ['return-offer', 'frontend'],
+        taskStartTime: -1,
+        taskEndTime: -1,
+        requiredDayOfWeek: -1,
+        requiredStartHour: -1,
+        requiredEndHour: -1
       },
       {
         jobId: 'job_seed_004',
@@ -167,7 +189,132 @@ export class DemoDataInitializer {
         workAddress: 'Beijing',
         city: 'Beijing',
         skills: ['Java', 'Spring Boot', 'MySQL'],
-        tags: ['big-tech', 'backend']
+        tags: ['big-tech', 'backend'],
+        taskStartTime: -1,
+        taskEndTime: -1,
+        requiredDayOfWeek: -1,
+        requiredStartHour: -1,
+        requiredEndHour: -1
+      },
+      {
+        jobId: 'job_seed_011',
+        recruiterId: 'recruiter_demo_002',
+        companyName: 'BlueLake Media',
+        title: '字幕质检助理',
+        category: 'micro_task',
+        description: '校对短视频字幕、检查错别字并提交修改建议，适合有耐心的同学。',
+        educationRequired: 'College or above',
+        salaryRange: '80-100/task',
+        workYearsRequired: 'No limit',
+        workAddress: 'Remote',
+        city: 'Changsha',
+        skills: ['文案', '细心', 'Office'],
+        tags: ['remote', '内容审核'],
+        taskStartTime: buildNextWeekdayTime(now, 1, 19, 0),
+        taskEndTime: buildNextWeekdayTime(now, 1, 21, 0),
+        requiredDayOfWeek: 1,
+        requiredStartHour: 19,
+        requiredEndHour: 21
+      },
+      {
+        jobId: 'job_seed_012',
+        recruiterId: 'recruiter_demo_002',
+        companyName: 'Campus Orange',
+        title: '活动签到协助',
+        category: 'micro_task',
+        description: '现场协助活动签到、引导入场并整理报名信息。',
+        educationRequired: 'College or above',
+        salaryRange: '70/task',
+        workYearsRequired: 'No limit',
+        workAddress: '岳麓区大学生活动中心',
+        city: 'Changsha',
+        skills: ['沟通', '执行', '表格处理'],
+        tags: ['onsite', '活动支持'],
+        taskStartTime: buildNextWeekdayTime(now, 3, 12, 0),
+        taskEndTime: buildNextWeekdayTime(now, 3, 14, 0),
+        requiredDayOfWeek: 3,
+        requiredStartHour: 12,
+        requiredEndHour: 14
+      },
+      {
+        jobId: 'job_seed_013',
+        recruiterId: 'recruiter_demo_003',
+        companyName: 'Maple Survey Lab',
+        title: '问卷整理员',
+        category: 'micro_task',
+        description: '整理问卷样本、标记无效数据并输出汇总表。',
+        educationRequired: 'Bachelor',
+        salaryRange: '100-150/task',
+        workYearsRequired: 'No limit',
+        workAddress: 'Remote',
+        city: 'Changsha',
+        skills: ['Excel', '数据清洗', '耐心'],
+        tags: ['remote', '数据处理'],
+        taskStartTime: buildNextWeekdayTime(now, 5, 20, 0),
+        taskEndTime: buildNextWeekdayTime(now, 5, 22, 0),
+        requiredDayOfWeek: 5,
+        requiredStartHour: 20,
+        requiredEndHour: 22
+      },
+      {
+        jobId: 'job_seed_014',
+        recruiterId: 'recruiter_demo_003',
+        companyName: 'Pineapple Community',
+        title: '社群答疑助手',
+        category: 'micro_task',
+        description: '在用户群里回答常见问题，并记录待跟进事项。',
+        educationRequired: 'College or above',
+        salaryRange: '80-120/shift',
+        workYearsRequired: 'No limit',
+        workAddress: 'Remote',
+        city: 'Changsha',
+        skills: ['社群运营', '打字', '服务意识'],
+        tags: ['weekend', 'remote'],
+        taskStartTime: buildNextWeekdayTime(now, 6, 9, 0),
+        taskEndTime: buildNextWeekdayTime(now, 6, 12, 0),
+        requiredDayOfWeek: 6,
+        requiredStartHour: 9,
+        requiredEndHour: 12
+      },
+      {
+        jobId: 'job_seed_015',
+        recruiterId: 'recruiter_demo_004',
+        companyName: 'NorthStar Design',
+        title: '海报改稿支持',
+        category: 'micro_task',
+        description: '协助修改活动海报细节并导出多尺寸图片。',
+        educationRequired: 'College or above',
+        salaryRange: '120-180/task',
+        workYearsRequired: 'No limit',
+        workAddress: 'Remote',
+        city: 'Changsha',
+        skills: ['Figma', '设计执行', '审美'],
+        tags: ['weekend', '设计'],
+        taskStartTime: buildNextWeekdayTime(now, 0, 14, 0),
+        taskEndTime: buildNextWeekdayTime(now, 0, 18, 0),
+        requiredDayOfWeek: 0,
+        requiredStartHour: 14,
+        requiredEndHour: 18
+      },
+      {
+        jobId: 'job_seed_016',
+        recruiterId: 'recruiter_demo_004',
+        companyName: 'CloudArk QA',
+        title: '小程序测试体验员',
+        category: 'micro_task',
+        description: '体验小程序核心流程，提交截图和问题复现步骤。',
+        educationRequired: 'College or above',
+        salaryRange: '90-130/task',
+        workYearsRequired: 'No limit',
+        workAddress: 'Remote',
+        city: 'Changsha',
+        skills: ['测试', '截图', '问题反馈'],
+        tags: ['weeknight', 'QA'],
+        taskStartTime: buildNextWeekdayTime(now, 2, 19, 0),
+        taskEndTime: buildNextWeekdayTime(now, 2, 22, 0),
+        requiredDayOfWeek: 2,
+        requiredStartHour: 19,
+        requiredEndHour: 22
       }
     ]
 
@@ -175,9 +322,9 @@ export class DemoDataInitializer {
       const job: SeedJob = jobs[i]
       await store.executeSql(
         `INSERT OR IGNORE INTO ${TABLE_JOB}
-        (job_id, recruiter_id, company_name, title, category, description, education_required, salary_range, work_years_required, work_address, city, skills, status, publish_time, update_time, view_count, apply_count, tags, is_ai_generated)
+        (job_id, recruiter_id, company_name, title, category, description, education_required, salary_range, work_years_required, work_address, city, skills, status, publish_time, update_time, view_count, apply_count, tags, is_ai_generated, task_start_time, task_end_time, required_day_of_week, required_start_hour, required_end_hour)
         VALUES
-        ('${job.jobId}', '${job.recruiterId}', '${escapeSql(job.companyName)}', '${escapeSql(job.title)}', '${job.category}', '${escapeSql(job.description)}', '${escapeSql(job.educationRequired)}', '${escapeSql(job.salaryRange)}', '${escapeSql(job.workYearsRequired)}', '${escapeSql(job.workAddress)}', '${escapeSql(job.city)}', '${escapeSql(JSON.stringify(job.skills))}', 'published', ${now - i * 7200000}, ${now - i * 7200000}, ${30 + i * 7}, ${3 + i}, '${escapeSql(JSON.stringify(job.tags))}', 0)`
+        ('${job.jobId}', '${job.recruiterId}', '${escapeSql(job.companyName)}', '${escapeSql(job.title)}', '${job.category}', '${escapeSql(job.description)}', '${escapeSql(job.educationRequired)}', '${escapeSql(job.salaryRange)}', '${escapeSql(job.workYearsRequired)}', '${escapeSql(job.workAddress)}', '${escapeSql(job.city)}', '${escapeSql(JSON.stringify(job.skills))}', 'published', ${now - i * 7200000}, ${now - i * 7200000}, ${30 + i * 7}, ${3 + i}, '${escapeSql(JSON.stringify(job.tags))}', 0, ${job.taskStartTime ?? -1}, ${job.taskEndTime ?? -1}, ${job.requiredDayOfWeek ?? -1}, ${job.requiredStartHour ?? -1}, ${job.requiredEndHour ?? -1})`
       )
     }
   }
@@ -310,6 +457,7 @@ export class DemoDataInitializer {
         isAnonymous: true,
         tags: ['frontend', 'interview', 'changsha'],
         likeCount: 8,
+        favoriteCount: 3,
         commentCount: 2
       },
       {
@@ -322,6 +470,20 @@ export class DemoDataInitializer {
         isAnonymous: true,
         tags: ['backend', 'practice', 'study-buddy'],
         likeCount: 5,
+        favoriteCount: 2,
+        commentCount: 1
+      },
+      {
+        postId: 'post_seed_003',
+        userId: 'student_demo_001',
+        school: 'Central South University',
+        title: 'ByteDance backend intern written test review',
+        content: 'The written test covered networking basics, SQL, and two coding questions. The difficulty was moderate but time was tight.',
+        category: 'interview',
+        isAnonymous: true,
+        tags: ['backend', 'bytedance', 'written-test'],
+        likeCount: 9,
+        favoriteCount: 4,
         commentCount: 1
       }
     ]
@@ -330,9 +492,52 @@ export class DemoDataInitializer {
       const post: SeedPost = posts[i]
       await store.executeSql(
         `INSERT OR IGNORE INTO ${TABLE_COMMUNITY_POST}
-        (post_id, user_id, school, title, content, category, is_anonymous, tags, like_count, comment_count, create_time)
+        (post_id, user_id, school, title, content, category, is_anonymous, tags, like_count, favorite_count, comment_count, create_time)
         VALUES
-        ('${post.postId}', '${post.userId}', '${escapeSql(post.school)}', '${escapeSql(post.title)}', '${escapeSql(post.content)}', '${post.category}', ${post.isAnonymous ? 1 : 0}, '${escapeSql(JSON.stringify(post.tags))}', ${post.likeCount}, ${post.commentCount}, ${now - i * 3600000})`
+        ('${post.postId}', '${post.userId}', '${escapeSql(post.school)}', '${escapeSql(post.title)}', '${escapeSql(post.content)}', '${post.category}', ${post.isAnonymous ? 1 : 0}, '${escapeSql(JSON.stringify(post.tags))}', ${post.likeCount}, ${post.favoriteCount}, ${post.commentCount}, ${now - i * 3600000})`
+      )
+    }
+  }
+
+  private static async seedComments(store: relationalStore.RdbStore, now: number): Promise<void> {
+    const comments: SeedComment[] = [
+      {
+        commentId: 'comment_seed_001',
+        postId: 'post_seed_001',
+        userId: 'student_demo_001',
+        content: '二面主要追问了项目里你自己负责的模块，可以提前准备拆解。',
+        isAnonymous: true
+      },
+      {
+        commentId: 'comment_seed_002',
+        postId: 'post_seed_001',
+        userId: 'student_demo_001',
+        content: '如果是前端岗，性能优化和接口异常处理基本都会问到。',
+        isAnonymous: true
+      },
+      {
+        commentId: 'comment_seed_003',
+        postId: 'post_seed_002',
+        userId: 'student_demo_001',
+        content: '我也在找后端搭子，晚上可以一起刷题。',
+        isAnonymous: true
+      },
+      {
+        commentId: 'comment_seed_004',
+        postId: 'post_seed_003',
+        userId: 'student_demo_001',
+        content: '这场笔试数据库题不少，建议提前把索引和 join 复习一下。',
+        isAnonymous: true
+      }
+    ]
+
+    for (let i = 0; i < comments.length; i++) {
+      const comment: SeedComment = comments[i]
+      await store.executeSql(
+        `INSERT OR IGNORE INTO ${TABLE_POST_COMMENT}
+        (comment_id, post_id, user_id, content, is_anonymous, create_time)
+        VALUES
+        ('${comment.commentId}', '${comment.postId}', '${comment.userId}', '${escapeSql(comment.content)}', ${comment.isAnonymous ? 1 : 0}, ${now - i * 1800000})`
       )
     }
   }

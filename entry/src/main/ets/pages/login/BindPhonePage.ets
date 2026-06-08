@@ -1,6 +1,6 @@
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
-import { UserProfile, UserRole } from '../../model/UserModel'
+import { StudentType, UserProfile, UserRole } from '../../model/UserModel'
 import { SmsService } from '../../service/SmsService'
 import { UserDao } from '../../service/UserDao'
 
@@ -62,33 +62,68 @@ struct BindPhonePage {
       AlertDialog.show({ message: '请设置至少 6 位密码' })
       return
     }
-    const verifyResult = await this.smsService.verifyCode(this.phoneNumber, this.verifyCode)
+    const normalizedPhone = this.phoneNumber.trim()
+    const normalizedCode = this.verifyCode.trim()
+    const normalizedPassword = this.password.trim()
+    const verifyResult = await this.smsService.verifyCode(normalizedPhone, normalizedCode)
     if (!verifyResult.success) {
       AlertDialog.show({ message: verifyResult.message })
       return
     }
-    const isBound = await this.userDao.isPhoneBound(this.phoneNumber)
-    if (isBound) {
-      AlertDialog.show({ message: '该手机号已绑定其他账号' })
+    const existingUser = await this.userDao.getUserByPhone(normalizedPhone)
+    if (existingUser) {
+      if (!existingUser.password && normalizedPassword.length >= 6) {
+        await this.userDao.updatePassword(existingUser.userId, normalizedPassword)
+      }
+      await this.finishLogin(existingUser.userId, existingUser)
       return
     }
 
     const user: UserProfile = {
-      userId: this.openId ? `${this.platform}_${this.openId}` : `phone_${this.phoneNumber}`,
-      phone: this.phoneNumber,
-      password: this.password,
+      userId: this.openId ? `${this.platform}_${this.openId}` : `phone_${normalizedPhone}`,
+      phone: normalizedPhone,
+      password: normalizedPassword,
       role: UserRole.JOB_SEEKER,
       isGuest: false,
       realName: this.nickname || '',
       avatar: this.avatar || ''
     }
 
-    await this.userDao.logoutAll()
     await this.userDao.insertUser(user)
-    AppState.currentUser = user
+    await this.finishLogin(user.userId, user)
+  }
+
+  private async finishLogin(userId: string, fallbackUser: UserProfile): Promise<void> {
+    await this.userDao.logoutAll()
+    await this.userDao.markUserLoggedIn(userId)
+    let nextUser = await this.userDao.getUserById(userId)
+    if (!nextUser) {
+      nextUser = fallbackUser
+    }
+    if (!nextUser.studentType) {
+      const remembered = AppState.getRememberedStudentType(nextUser.phone || '')
+      if (remembered === StudentType.CURRENT || remembered === StudentType.GRADUATING) {
+        await this.userDao.updateStudentType(nextUser.userId, remembered as StudentType)
+        const repairedUser = await this.userDao.getUserById(nextUser.userId)
+        if (repairedUser) {
+          nextUser = repairedUser
+        } else {
+          nextUser.studentType = remembered as StudentType
+        }
+      }
+    }
+    if (nextUser.studentType) {
+      AppState.rememberStudentType(nextUser.phone || '', nextUser.studentType)
+    }
+    AppState.currentUser = nextUser
     AppState.isLoggedIn = true
     AppState.isGuest = false
-    router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
+    AppState.syncToStorage()
+    if (nextUser.studentType) {
+      router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })
+    } else {
+      router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
+    }
   }
 
   build() {
