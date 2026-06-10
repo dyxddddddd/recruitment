@@ -98,20 +98,23 @@ struct JobDetailPage {
       applyTime: Date.now()
     }
     await this.jobDao.insertApplication(app)
-    const sessionId = await this.messageDao.ensureApplicationConversation(this.job, AppState.currentUser, recruiter)
+    const studentName = AppState.currentUser.realName || AppState.currentUser.phone || '候选人'
+    const recruiterName = this.getRecruiterDisplayName(recruiter)
+    const sessionId = await this.messageDao.ensureApplicationConversation(
+      recruiter.userId, AppState.currentUser.userId, studentName, recruiterName, this.job.title)
     this.hasApplied = true
 
     AlertDialog.show({
       title: '投递成功',
-      message: `简历已发送给 ${this.getRecruiterDisplayName(recruiter)}。${translatedNote}你现在可以直接发消息沟通。`,
+      message: `简历已发送给 ${recruiterName}。${translatedNote}你现在可以直接发消息沟通。`,
       primaryButton: {
         value: '去沟通',
         action: () => {
           router.pushUrl({
             url: AppConstants.ROUTE_CHAT,
             params: {
-              sessionId: sessionId,
-              peerName: this.getRecruiterDisplayName(recruiter),
+              conversationId: sessionId,
+              peerName: recruiterName,
               isAIAgent: false
             }
           })
@@ -133,12 +136,15 @@ struct JobDetailPage {
       })
       return
     }
-    const sessionId = await this.messageDao.ensureApplicationConversation(this.job, AppState.currentUser, recruiter)
+    const studentName = AppState.currentUser.realName || AppState.currentUser.phone || '候选人'
+    const recruiterName = this.getRecruiterDisplayName(recruiter)
+    const conversationId = await this.messageDao.ensureApplicationConversation(
+      recruiter.userId, AppState.currentUser.userId, studentName, recruiterName, this.job.title)
     router.pushUrl({
       url: AppConstants.ROUTE_CHAT,
       params: {
-        sessionId: sessionId,
-        peerName: this.getRecruiterDisplayName(recruiter),
+        conversationId: conversationId,
+        peerName: recruiterName,
         isAIAgent: false
       }
     })

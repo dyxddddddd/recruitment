@@ -42,6 +42,7 @@ export class DatabaseHelper {
     await this.migrateV3ToV4()
     await this.migrateV4ToV5()
     await this.migrateV5ToV6()
+    await this.migrateV5ToV6()
     await DemoDataInitializer.seed(this.store)
 
     return this.store

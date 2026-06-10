@@ -91,6 +91,9 @@ struct LoginPage {
       this.showToast('请先输入手机号和密码')
       return
     }
+
+    await this.userDao.ensureDemoAccounts()
+
     const user = await this.userDao.getUserByPhoneAndPassword(normalizedPhone, normalizedPassword)
     if (!user) {
       this.showToast('手机号或密码错误')

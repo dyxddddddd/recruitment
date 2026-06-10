@@ -29,7 +29,12 @@ struct SplashPage {
 
   goToNext(): void {
     clearInterval(this.timerId)
-    router.replaceUrl({ url: AppConstants.ROUTE_WELCOME })
+    // 首次使用显示协议页，后续直接进入主页
+    if (AppStorage.get<boolean>('agreement_accepted') === true) {
+      router.replaceUrl({ url: AppConstants.ROUTE_INDEX })
+    } else {
+      router.replaceUrl({ url: AppConstants.ROUTE_WELCOME })
+    }
   }
 
   build() {
