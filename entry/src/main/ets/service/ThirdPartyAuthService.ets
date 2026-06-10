@@ -70,6 +70,9 @@ export class ThirdPartyAuthService {
   private static readonly wechatEventHandler: WechatEventHandler = new WechatEventHandler()
 
   async authorize(platform: string, context: common.UIAbilityContext): Promise<ThirdPartyAuthResult> {
+    if (this.shouldUseMock(platform)) {
+      return this.mockAuthorize(platform)
+    }
     if (platform === 'wechat') {
       return this.authorizeWechat(context)
     }
@@ -111,6 +114,33 @@ export class ThirdPartyAuthService {
     }
 
     return this.exchangeProfile('qq', authResult.authResponse.authCode)
+  }
+
+  private shouldUseMock(platform: string): boolean {
+    if (AppConstants.THIRD_PARTY_AUTH_MOCK_ENABLED) {
+      return true
+    }
+    if (platform === 'wechat') {
+      return !AppConstants.WECHAT_APP_ID.trim()
+    }
+    if (platform === 'qq') {
+      return !AppConstants.QQ_APP_ID.trim()
+    }
+    return false
+  }
+
+  private async mockAuthorize(platform: string): Promise<ThirdPartyAuthResult> {
+    const timestamp = Date.now()
+    const mockPlatform: SocialPlatform = platform === 'wechat' ? 'wechat' : 'qq'
+    const nickname = mockPlatform === 'wechat' ? '微信测试用户' : 'QQ测试用户'
+    return {
+      success: true,
+      platform: mockPlatform,
+      openId: `mock_${mockPlatform}_${timestamp}`,
+      nickname: nickname,
+      avatar: '',
+      authCode: `mock_code_${timestamp}`
+    }
   }
 
   private async authorizeWechat(context: common.UIAbilityContext): Promise<ThirdPartyAuthResult> {

@@ -10,6 +10,7 @@ export class AppConstants {
   static readonly DEEPSEEK_API_KEY = 'sk-eb8ad2c97cb2406d9d5bf5a7a51d3717'
   static readonly WECHAT_APP_ID = ''
   static readonly QQ_APP_ID = ''
+  static readonly THIRD_PARTY_AUTH_MOCK_ENABLED = true
   static readonly WECHAT_LOGIN_SCOPE = 'snsapi_userinfo'
   static readonly QQ_LOGIN_SCOPE = 'get_user_info'
   static readonly ENTRY_ABILITY_NAME = 'EntryAbility'

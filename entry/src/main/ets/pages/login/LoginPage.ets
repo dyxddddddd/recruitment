@@ -1,8 +1,10 @@
 import { router } from '@kit.ArkUI'
+import { common } from '@kit.AbilityKit'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { StudentType, UserProfile, UserRole } from '../../model/UserModel'
 import { EmailAuthService } from '../../service/EmailAuthService'
 import { SmsService } from '../../service/SmsService'
+import { ThirdPartyAuthService } from '../../service/ThirdPartyAuthService'
 import { UserDao } from '../../service/UserDao'
 
 @Entry
@@ -26,6 +28,7 @@ struct LoginPage {
   private userDao: UserDao = new UserDao()
   private smsService: SmsService = new SmsService()
   private emailAuthService: EmailAuthService = new EmailAuthService()
+  private thirdPartyAuthService: ThirdPartyAuthService = new ThirdPartyAuthService()
 
   aboutToAppear(): void {
     const params = router.getParams() as Record<string, Object>
@@ -202,6 +205,29 @@ struct LoginPage {
     await this.userDao.insertUser(newUser)
     const insertedUser = await this.userDao.getUserById(newUser.userId)
     return insertedUser || newUser
+  }
+
+  async handleThirdPartyLogin(platform: string): Promise<void> {
+    try {
+      const context = getContext(this) as common.UIAbilityContext
+      const authResult = await this.thirdPartyAuthService.authorize(platform, context)
+      if (!authResult.success) {
+        this.showToast('第三方授权失败，请稍后重试')
+        return
+      }
+      router.pushUrl({
+        url: AppConstants.ROUTE_BIND_PHONE,
+        params: {
+          platform: authResult.platform,
+          openId: authResult.openId,
+          nickname: authResult.nickname,
+          avatar: authResult.avatar,
+          authCode: authResult.authCode
+        }
+      })
+    } catch (e) {
+      this.showToast(e instanceof Error ? e.message : '第三方登录失败')
+    }
   }
 
   async handleGuestMode(): Promise<void> {
@@ -476,6 +502,47 @@ struct LoginPage {
     .alignItems(HorizontalAlign.Center)
   }
 
+  @Builder
+  ThirdPartyLoginSection() {
+    Column() {
+      Text('第三方快捷登录')
+        .fontSize(13)
+        .fontColor(AppConstants.COLOR_TEXT_HINT)
+        .margin({ bottom: 14 })
+
+      Row() {
+        Button('微信登录')
+          .width(138)
+          .height(44)
+          .fontSize(15)
+          .backgroundColor('#07C160')
+          .borderRadius(22)
+          .onClick(() => this.handleThirdPartyLogin('wechat'))
+
+        Button('QQ 登录')
+          .width(138)
+          .height(44)
+          .fontSize(15)
+          .backgroundColor('#12B7F5')
+          .borderRadius(22)
+          .onClick(() => this.handleThirdPartyLogin('qq'))
+      }
+      .width('80%')
+      .justifyContent(FlexAlign.SpaceBetween)
+
+      Text(AppConstants.THIRD_PARTY_AUTH_MOCK_ENABLED
+        ? '当前为 mock 模式，模拟器中会直接走授权成功后的绑定手机号流程。'
+        : '已接入真实 SDK，真机安装微信或 QQ 后可测试真实授权。')
+        .fontSize(12)
+        .fontColor(AppConstants.COLOR_TEXT_HINT)
+        .width('80%')
+        .margin({ top: 12 })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
+    .margin({ top: 20, bottom: 20 })
+  }
+
   build() {
     Column() {
       Row() {
@@ -513,6 +580,10 @@ struct LoginPage {
         this.PhoneLoginPanel()
       } else {
         this.EmailLoginPanel()
+      }
+
+      if (this.entryRole === UserRole.JOB_SEEKER) {
+        this.ThirdPartyLoginSection()
       }
 
       Blank()
