@@ -43,6 +43,7 @@ export class AppConstants {
   static readonly ROUTE_WELCOME = 'pages/WelcomePage'
   static readonly ROUTE_LOGIN = 'pages/login/LoginPage'
   static readonly ROUTE_BIND_PHONE = 'pages/login/BindPhonePage'
+  static readonly ROUTE_SET_PASSWORD = 'pages/login/SetPasswordPage'
   static readonly ROUTE_JOB_SEEKER_MAIN = 'pages/job_seeker/JobSeekerMainPage'
   static readonly ROUTE_RECRUITER_MAIN = 'pages/recruiter/RecruiterMainPage'
   static readonly ROUTE_RESUME_EDIT = 'pages/job_seeker/ResumeEditPage'

@@ -5,6 +5,7 @@
     "pages/WelcomePage",
     "pages/login/LoginPage",
     "pages/login/BindPhonePage",
+    "pages/login/SetPasswordPage",
     "pages/job_seeker/JobSeekerMainPage",
     "pages/job_seeker/JobDetailPage",
     "pages/job_seeker/CompanyDetailPage",

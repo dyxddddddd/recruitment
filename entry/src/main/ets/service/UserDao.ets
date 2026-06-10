@@ -12,6 +12,10 @@ export class UserDao {
     return phone.trim()
   }
 
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase()
+  }
+
   private normalizePassword(password: string): string {
     return password.trim()
   }
@@ -30,11 +34,30 @@ export class UserDao {
     return users
   }
 
+  private async queryUsersByEmail(email: string): Promise<UserProfile[]> {
+    const normalizedEmail = this.normalizeEmail(email)
+    if (!normalizedEmail) {
+      return []
+    }
+    const store = await this.helper.getStore()
+    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
+    predicates.equalTo('email', normalizedEmail)
+    predicates.orderByDesc('update_time')
+    const resultSet = await store.query(predicates)
+    const users: UserProfile[] = []
+    while (resultSet.goToNextRow()) {
+      users.push(this.rowToUserProfile(resultSet))
+    }
+    resultSet.close()
+    return users
+  }
+
   async insertUser(user: UserProfile): Promise<void> {
     const store = await this.helper.getStore()
     const valueBucket: relationalStore.ValuesBucket = {
       user_id: user.userId,
       phone: user.phone,
+      email: user.email ?? '',
       role: user.role,
       student_type: user.studentType ?? '',
       real_name: user.realName ?? '',
@@ -57,7 +80,7 @@ export class UserDao {
       password: user.password ?? '',
       create_time: Date.now(),
       update_time: Date.now(),
-      is_login: 1
+      is_login: 0
     }
     await store.insert(TABLE_USER, valueBucket)
   }
@@ -67,6 +90,7 @@ export class UserDao {
     const existing = await this.getUserById(user.userId)
     const valueBucket: relationalStore.ValuesBucket = {
       phone: user.phone,
+      email: user.email ?? existing?.email ?? '',
       role: user.role,
       student_type: user.studentType ?? existing?.studentType ?? '',
       real_name: user.realName ?? '',
@@ -204,6 +228,19 @@ export class UserDao {
     return users[0]
   }
 
+  async getUserByEmail(email: string): Promise<UserProfile | null> {
+    const users = await this.queryUsersByEmail(email)
+    if (users.length === 0) {
+      return null
+    }
+    for (let i = 0; i < users.length; i++) {
+      if (users[i].studentType) {
+        return users[i]
+      }
+    }
+    return users[0]
+  }
+
   async getUserByPhoneAndPassword(phone: string, password: string): Promise<UserProfile | null> {
     const normalizedPhone = this.normalizePhone(phone)
     const normalizedPassword = this.normalizePassword(password)
@@ -211,6 +248,52 @@ export class UserDao {
       return null
     }
     const users = await this.queryUsersByPhone(normalizedPhone)
+    let matchedWithoutStudentType: UserProfile | null = null
+    for (let i = 0; i < users.length; i++) {
+      const candidate = users[i]
+      if (candidate && (candidate.password || '') === normalizedPassword) {
+        if (candidate.studentType) {
+          return candidate
+        }
+        if (!matchedWithoutStudentType) {
+          matchedWithoutStudentType = candidate
+        }
+      }
+    }
+    if (matchedWithoutStudentType) {
+      for (let i = 0; i < users.length; i++) {
+        const candidate = users[i]
+        if (candidate && candidate.studentType) {
+          await this.updateStudentType(matchedWithoutStudentType.userId, candidate.studentType)
+          return await this.getUserById(matchedWithoutStudentType.userId)
+        }
+      }
+      return matchedWithoutStudentType
+    }
+    for (let i = 0; i < users.length; i++) {
+      const candidate = users[i]
+      if (candidate && (!candidate.password || candidate.password.length === 0)) {
+        for (let j = 0; j < users.length; j++) {
+          const typedUser = users[j]
+          if (typedUser && typedUser.studentType) {
+            await this.updateStudentType(candidate.userId, typedUser.studentType)
+            break
+          }
+        }
+        await this.updatePassword(candidate.userId, normalizedPassword)
+        return await this.getUserById(candidate.userId)
+      }
+    }
+    return null
+  }
+
+  async getUserByEmailAndPassword(email: string, password: string): Promise<UserProfile | null> {
+    const normalizedEmail = this.normalizeEmail(email)
+    const normalizedPassword = this.normalizePassword(password)
+    if (!normalizedEmail || !normalizedPassword) {
+      return null
+    }
+    const users = await this.queryUsersByEmail(normalizedEmail)
     let matchedWithoutStudentType: UserProfile | null = null
     for (let i = 0; i < users.length; i++) {
       const candidate = users[i]
@@ -259,6 +342,7 @@ export class UserDao {
     return {
       userId: row.getString(row.getColumnIndex('user_id')),
       phone: row.getString(row.getColumnIndex('phone')),
+      email: row.getString(row.getColumnIndex('email')),
       role: (roleStr === UserRole.RECRUITER ? UserRole.RECRUITER : UserRole.JOB_SEEKER) as UserRole,
       studentType: studentTypeStr === StudentType.GRADUATING
         ? StudentType.GRADUATING

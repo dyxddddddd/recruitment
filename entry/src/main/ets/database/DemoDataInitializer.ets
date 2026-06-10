@@ -143,6 +143,12 @@ export class DemoDataInitializer {
       VALUES
       ('student_demo_002', '13800001234', 'job_seeker', 0, '123456', ${now}, ${now}, 0)`
     )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_USER}
+      (user_id, phone, role, is_guest, password, create_time, update_time, is_login)
+      VALUES
+      ('student_demo_003', '13800005678', 'job_seeker', 0, '123456', ${now}, ${now}, 0)`
+    )
   }
 
   private static async resetSeedJobs(store: relationalStore.RdbStore): Promise<void> {

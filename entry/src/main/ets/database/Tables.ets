@@ -1,7 +1,7 @@
 // 数据库表结构定义
 
 export const DATABASE_NAME = 'UniCampus.db'
-export const DATABASE_VERSION = 5
+export const DATABASE_VERSION = 6
 
 // 用户表
 export const TABLE_USER = 'tb_user'
@@ -9,6 +9,7 @@ export const CREATE_TABLE_USER = `
 CREATE TABLE IF NOT EXISTS ${TABLE_USER} (
   user_id TEXT PRIMARY KEY,
   phone TEXT,
+  email TEXT,
   role TEXT NOT NULL,
   student_type TEXT,
   real_name TEXT,

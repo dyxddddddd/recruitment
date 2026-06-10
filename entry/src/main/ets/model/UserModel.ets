@@ -24,6 +24,7 @@ export enum VipLevel {
 export interface UserProfile {
   userId: string
   phone: string
+  email?: string
   password?: string
   role: UserRole
   // 求职者专属
@@ -50,8 +51,9 @@ export interface UserProfile {
 }
 
 export interface LoginInfo {
-  loginType: 'phone' | 'wechat' | 'qq'
+  loginType: 'phone' | 'email' | 'wechat' | 'qq'
   phone?: string
+  email?: string
   password?: string
   verifyCode?: string
   openId?: string
