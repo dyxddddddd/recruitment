@@ -4,6 +4,7 @@
     "pages/Index",
     "pages/WelcomePage",
     "pages/login/LoginPage",
+    "pages/login/MockSocialAuthPage",
     "pages/login/BindPhonePage",
     "pages/login/SetPasswordPage",
     "pages/job_seeker/JobSeekerMainPage",

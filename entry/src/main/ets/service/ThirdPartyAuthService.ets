@@ -1,7 +1,6 @@
 import { common, Want } from '@kit.AbilityKit'
 import {
   AuthReqOptions,
-  AuthResult,
   AuthResultType,
   IQQOpenApi,
   OpenApiConfig,
@@ -63,6 +62,13 @@ export interface ThirdPartyAuthResult {
   authCode: string
 }
 
+export interface SocialMockProfile {
+  nickname: string
+  avatarLabel: string
+  accountHint: string
+  region: string
+}
+
 export class ThirdPartyAuthService {
   private static qqApi: IQQOpenApi | null = null
   private static wxApi: WXApi | null = null
@@ -85,6 +91,23 @@ export class ThirdPartyAuthService {
   static handleIncomingWant(want: Want): void {
     ThirdPartyAuthService.handleWechatWant(want)
     ThirdPartyAuthService.handleQqWant(want)
+  }
+
+  static getMockProfile(platform: string): SocialMockProfile {
+    if (platform === 'wechat') {
+      return {
+        nickname: '长安',
+        avatarLabel: '夏',
+        accountHint: '微信号：linzhixia',
+        region: '湖南 长沙'
+      }
+    }
+    return {
+      nickname: '烟雨暗千家',
+      avatarLabel: '屿',
+      accountHint: 'QQ号：1904****670',
+      region: '湖南 长沙'
+    }
   }
 
   private async authorizeQq(): Promise<ThirdPartyAuthResult> {
@@ -132,12 +155,12 @@ export class ThirdPartyAuthService {
   private async mockAuthorize(platform: string): Promise<ThirdPartyAuthResult> {
     const timestamp = Date.now()
     const mockPlatform: SocialPlatform = platform === 'wechat' ? 'wechat' : 'qq'
-    const nickname = mockPlatform === 'wechat' ? '微信测试用户' : 'QQ测试用户'
+    const profile = ThirdPartyAuthService.getMockProfile(mockPlatform)
     return {
       success: true,
       platform: mockPlatform,
       openId: `mock_${mockPlatform}_${timestamp}`,
-      nickname: nickname,
+      nickname: profile.nickname,
       avatar: '',
       authCode: `mock_code_${timestamp}`
     }
