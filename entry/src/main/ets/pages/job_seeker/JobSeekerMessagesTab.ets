@@ -2,20 +2,30 @@ import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { ChatSession } from '../../model/MessageModel'
 import { MessageDao } from '../../service/MessageDao'
+import { DatabaseHelper } from '../../database/DatabaseHelper'
+import { TABLE_AI_INTERVIEW, TABLE_SYSTEM_MESSAGE } from '../../database/Tables'
+
+interface InterviewInvite {
+  interviewId: string
+  status: string
+}
 
 @Component
 export struct JobSeekerMessagesTab {
   @State sessions: ChatSession[] = []
   @State isAIEnabled: boolean = false
+  @State pendingInterviewCount: number = 0
   @StorageLink('msg_refresh') @Watch('onRefresh') refreshTrigger: number = 0
   private messageDao: MessageDao = new MessageDao()
 
-  aboutToAppear(): void {
-    this.loadSessions()
+  async aboutToAppear(): Promise<void> {
+    await this.loadSessions()
+    await this.loadPendingCount()
   }
 
-  onRefresh(): void {
-    this.loadSessions()
+  async onRefresh(): Promise<void> {
+    await this.loadSessions()
+    await this.loadPendingCount()
   }
 
   async loadSessions(): Promise<void> {
@@ -28,11 +38,80 @@ export struct JobSeekerMessagesTab {
     await this.messageDao.syncConversations(AppState.currentUser.userId)
     this.sessions = await this.messageDao.getConversations(AppState.currentUser.userId)
     this.isAIEnabled = await this.messageDao.getAIAgentEnabled(AppState.currentUser.userId)
-    let total = 0
+  }
+
+  async loadPendingCount(): Promise<void> {
+    if (!AppState.currentUser) return
+    const seenIds: string[] = []
+    let count = 0
+
+    try {
+      const store = await DatabaseHelper.getInstance().getStore()
+
+      // tb_ai_interview 中待处理的（仅 invited 和 in_progress）
+      try {
+        const rs = await store.querySql(
+          `SELECT interview_id FROM ${TABLE_AI_INTERVIEW}
+           WHERE user_id = '${AppState.currentUser.userId}'
+             AND status IN ('invited', 'in_progress')
+           ORDER BY invite_time DESC`
+        )
+        while (rs.goToNextRow()) {
+          const id = rs.getString(rs.getColumnIndex('interview_id'))
+          if (seenIds.indexOf(id) < 0) {
+            seenIds.push(id)
+            count++
+          }
+        }
+        rs.close()
+      } catch (_e) { /* ignore */ }
+
+      // tb_system_message 兜底：只计入状态仍是 invited/in_progress 的
+      try {
+        const msgRs = await store.querySql(
+          `SELECT content FROM ${TABLE_SYSTEM_MESSAGE}
+           WHERE user_id = '${AppState.currentUser.userId}' AND type = 'interview'
+           ORDER BY timestamp DESC`
+        )
+        while (msgRs.goToNextRow()) {
+          const content = msgRs.getString(msgRs.getColumnIndex('content'))
+          const prefix = '[INTERVIEW:'
+          const prefixEnd = content.indexOf(']')
+          if (content.indexOf(prefix) === 0 && prefixEnd > prefix.length) {
+            const id = content.substring(prefix.length, prefixEnd)
+            if (seenIds.indexOf(id) < 0) {
+              // 验证该面试确实是待参加状态
+              let isPending = true
+              try {
+                const subRs = await store.querySql(
+                  `SELECT status FROM ${TABLE_AI_INTERVIEW} WHERE interview_id = '${id}'`
+                )
+                if (subRs.goToFirstRow()) {
+                  const st = subRs.getString(subRs.getColumnIndex('status'))
+                  if (st !== 'invited' && st !== 'in_progress') {
+                    isPending = false
+                  }
+                }
+                subRs.close()
+              } catch (_e2) { /* 查不到就按待处理计 */ }
+              if (isPending) {
+                seenIds.push(id)
+                count++
+              }
+            }
+          }
+        }
+        msgRs.close()
+      } catch (_e) { /* ignore */ }
+    } catch (_e) { /* ignore */ }
+
+    this.pendingInterviewCount = count
+    // 更新导航栏未读总数
+    let sessionUnread = 0
     for (let i = 0; i < this.sessions.length; i++) {
-      total += this.sessions[i].unreadCount
+      sessionUnread += this.sessions[i].unreadCount
     }
-    AppStorage.setOrCreate<number>('total_unread', total)
+    AppStorage.setOrCreate<number>('total_unread', sessionUnread + count)
   }
 
   handleSessionClick(session: ChatSession): void {
@@ -127,7 +206,45 @@ export struct JobSeekerMessagesTab {
 
       Divider().height(1).color('#F0F0F0')
 
-      if (this.sessions.length === 0) {
+      // AI面试入口（紧凑单行）
+      Row() {
+        Column() {
+          Text('🤖').fontSize(18)
+        }
+        .width(36).height(36).justifyContent(FlexAlign.Center)
+        .backgroundColor('#F8F4FF').borderRadius(10)
+        .margin({ right: 10 })
+
+        Column() {
+          Text('AI虚拟面试')
+            .fontSize(14).fontWeight(FontWeight.Medium).fontColor('#1A1A1A')
+          Text(this.pendingInterviewCount > 0
+            ? `${this.pendingInterviewCount} 个待参加`
+            : '查看面试记录')
+            .fontSize(11).fontColor(this.pendingInterviewCount > 0 ? '#9B59B6' : '#BBBBBB')
+            .margin({ top: 2 })
+        }
+        .alignItems(HorizontalAlign.Start).layoutWeight(1)
+
+        if (this.pendingInterviewCount > 0) {
+          Text(`${this.pendingInterviewCount}`)
+            .fontSize(12).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .backgroundColor('#FF4D4F').borderRadius(10)
+            .margin({ right: 6 })
+        }
+        Image($r('sys.symbol.chevron_right'))
+          .width(12).height(12).fillColor('#CCCCCC')
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+      .backgroundColor('#FFFFFF')
+      .border({ width: { bottom: 1 }, color: '#F0F0F0' })
+      .onClick(() => {
+        router.pushUrl({ url: AppConstants.ROUTE_AI_INTERVIEW_HUB })
+      })
+
+      if (this.sessions.length === 0 && this.pendingInterviewCount === 0) {
         Column() {
           Text('💬')
             .fontSize(48)

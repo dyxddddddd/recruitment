@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI'
 import { common } from '@kit.AbilityKit'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
-import { StudentType, UserProfile, UserRole } from '../../model/UserModel'
+import { StudentType, UserProfile, UserRole, AuthStatus } from '../../model/UserModel'
 import { SmsService } from '../../service/SmsService'
 import { ThirdPartyAuthService } from '../../service/ThirdPartyAuthService'
 import { UserDao } from '../../service/UserDao'
@@ -182,7 +182,11 @@ struct LoginPage {
     AppState.isGuest = false
     AppState.syncToStorage()
     if (nextUser.role === UserRole.RECRUITER) {
-      router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_MAIN })
+      if (nextUser.authStatus === AuthStatus.APPROVED) {
+        router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_MAIN })
+      } else {
+        router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_AUTH })
+      }
     } else if (!nextUser.studentType) {
       router.replaceUrl({ url: AppConstants.ROUTE_IDENTITY_GUIDE })
     } else {

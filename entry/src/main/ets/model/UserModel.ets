@@ -21,6 +21,13 @@ export enum VipLevel {
   VIP = 'vip'
 }
 
+export enum AuthStatus {
+  UNAUTHENTICATED = 0,
+  PENDING = 1,
+  APPROVED = 2,
+  REJECTED = 3
+}
+
 export interface UserProfile {
   userId: string
   phone: string
@@ -42,11 +49,24 @@ export interface UserProfile {
 
   // 招聘者专属
   companyName?: string
+  companyAddress?: string       // 企业注册地址
+  companyIndustry?: string      // 所属行业
+  companyScale?: string         // 企业规模
+  legalPerson?: string          // 法定代表人
+  contactPosition?: string      // 联系人职位
+  companyEmail?: string         // 企业邮箱
   idCard?: string
   businessLicense?: string    // 营业执照图片路径
   vipLevel?: VipLevel
   positionCount?: number       // 当前在招岗位数
   hrRealName?: string
+  authStatus?: number           // AuthStatus 枚举值
+  idCardFrontImage?: string     // 身份证人像面照片
+  idCardBackImage?: string      // 身份证国徽面照片
+  faceImage?: string            // 手持身份证照片
+  authSubmitTime?: number       // 认证提交时间戳
+  authApproveTime?: number      // 认证通过时间戳
+  authRejectReason?: string     // 认证驳回原因
 }
 
 export interface LoginInfo {

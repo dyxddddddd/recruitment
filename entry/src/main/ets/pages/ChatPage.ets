@@ -333,6 +333,14 @@ struct ChatPage {
     return name.charAt(0)
   }
 
+  // 自己的头像文字
+  getSelfAvatarChar(): string {
+    const user = AppState.currentUser
+    if (!user) return '我'
+    const name = user.realName || user.hrRealName || user.companyName || '我'
+    return name.charAt(0)
+  }
+
   // 根据名字生成固定的头像颜色
   getAvatarColor(name: string): string {
     const colors: string[] = [
@@ -344,6 +352,24 @@ struct ChatPage {
       hash = name.charCodeAt(i) + ((hash << 5) - hash)
     }
     return colors[Math.abs(hash) % colors.length]
+  }
+
+  // 点击头像跳转到对方主页
+  navigateToPeerProfile(): void {
+    if (!this.peerId) return
+    if (this.isStudent()) {
+      // 学生端：点击HR头像 → 查看企业信息
+      router.pushUrl({
+        url: AppConstants.ROUTE_COMPANY_DETAIL,
+        params: { companyId: this.peerId }
+      })
+    } else {
+      // HR端：点击学生头像 → 查看人才详情
+      router.pushUrl({
+        url: AppConstants.ROUTE_TALENT_DETAIL,
+        params: { userId: this.peerId }
+      })
+    }
   }
 
   // 时间格式化
@@ -410,6 +436,7 @@ struct ChatPage {
             .fontColor('#FFFFFF')
         }
         .margin({ left: 10 })
+        .onClick(() => this.navigateToPeerProfile())
 
         Column() {
           Text(this.peerName)
@@ -555,6 +582,17 @@ struct ChatPage {
             .constraintSize({ maxWidth: '72%' })
         }
         .alignItems(HorizontalAlign.End)
+        Stack() {
+          Circle()
+            .width(34)
+            .height(34)
+            .fill(this.getAvatarColor(this.getSelfAvatarChar()))
+          Text(this.getSelfAvatarChar())
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#FFFFFF')
+        }
+        .margin({ left: 8 })
       } else {
         // 对方发的消息 — 左侧
         // 头像
@@ -568,6 +606,7 @@ struct ChatPage {
             .fontWeight(FontWeight.Medium)
             .fontColor('#FFFFFF')
         }
+        .onClick(() => this.navigateToPeerProfile())
 
         Column() {
           Text(message.content)
@@ -600,7 +639,7 @@ struct ChatPage {
     }
     .width('100%')
     .justifyContent(this.isOwnMessage(message) ? FlexAlign.End : FlexAlign.Start)
-    .padding(this.isOwnMessage(message) ? { right: 4 } : { left: 46 })
+    .padding(this.isOwnMessage(message) ? { right: 46 } : { left: 46 })
     .margin({ top: 2, bottom: 10 })
   }
 }

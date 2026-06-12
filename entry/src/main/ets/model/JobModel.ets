@@ -32,8 +32,11 @@ export interface JobPosition {
   taskStartTime?: number
   taskEndTime?: number
   requiredDayOfWeek?: number
+  requiredDaysOfWeek?: number[]
   requiredStartHour?: number
+  requiredStartMinute?: number
   requiredEndHour?: number
+  requiredEndMinute?: number
 }
 
 export interface JobApplication {

@@ -5,6 +5,10 @@ import { ResumeDao } from '../../service/ResumeDao'
 import { UserDao } from '../../service/UserDao'
 import { UserProfile, StudentType } from '../../model/UserModel'
 import { buildConversationId } from '../../model/MessageModel'
+import { InterviewApiService, CreateInterviewRequest } from '../../service/InterviewApiService'
+import { DatabaseHelper } from '../../database/DatabaseHelper'
+import { TABLE_AI_INTERVIEW } from '../../database/Tables'
+import { MessageDao } from '../../service/MessageDao'
 
 @Entry
 @Component
@@ -15,13 +19,17 @@ struct TalentDetailPage {
   @State showAIInterview: boolean = false
   @State isLoading: boolean = true
   @State loadError: boolean = false
+  @State isSendingInterview: boolean = false
   private resumeDao: ResumeDao = new ResumeDao()
   private userDao: UserDao = new UserDao()
+  private messageDao: MessageDao = new MessageDao()
   private userId: string = ''
+  private jobTitle: string = ''
 
   async aboutToAppear(): Promise<void> {
     const params = router.getParams() as Record<string, Object>
     this.userId = (params['userId'] as string) || ''
+    this.jobTitle = (params['jobTitle'] as string) || ''
     if (this.userId) {
       await this.loadData()
     } else {
@@ -54,6 +62,46 @@ struct TalentDetailPage {
         peerName: this.studentUser.realName || '候选人',
         isAIAgent: false
       }
+    })
+  }
+
+  async handleSendAIInterview(): Promise<void> {
+    if (this.isSendingInterview || !AppState.currentUser || !this.studentUser) return
+    const position = this.jobTitle || this.getDisplayPosition()
+    AlertDialog.show({
+      title: '确认发送',
+      message: `确定向「${this.getDisplayName()}」发送「${position}」的AI虚拟面试邀请吗？`,
+      primaryButton: {
+        value: '发送',
+        action: async () => {
+          this.isSendingInterview = true
+          try {
+            const result = await InterviewApiService.createInterview({
+              userId: this.userId,
+              position: position
+            })
+            const questionsJson = JSON.stringify(result.questions || []).replace(/'/g, "''")
+            const store = await DatabaseHelper.getInstance().getStore()
+            await store.executeSql(
+              `INSERT INTO ${TABLE_AI_INTERVIEW} (interview_id, recruiter_id, user_id, job_id, application_id, status, questions, invite_time)
+               VALUES ('${result.sessionId}', '${AppState.currentUser!.userId}', '${this.userId}', '', '', 'invited', '${questionsJson}', ${Date.now()})`
+            )
+            await this.messageDao.insertSystemMessage(
+              this.userId,
+              'AI虚拟面试邀请',
+              `[INTERVIEW:${result.sessionId}]${AppState.currentUser!.companyName || '企业'}邀请你参加「${position}」的AI视频面试（含数字人面试官+多维度评估）。请前往消息页查看并开始面试。`,
+              'interview'
+            )
+            AlertDialog.show({ title: '发送成功', message: `已向 ${this.getDisplayName()} 发送AI面试邀请。` })
+          } catch (e) {
+            const errMsg = (e as Error).message || JSON.stringify(e)
+            AlertDialog.show({ title: '发送失败', message: `原因：${errMsg}` })
+          } finally {
+            this.isSendingInterview = false
+          }
+        }
+      },
+      secondaryButton: { value: '取消', action: () => {} }
     })
   }
 
@@ -220,11 +268,12 @@ struct TalentDetailPage {
       .borderRadius(18)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 26, bottom: 14 })
+    .padding({ left: 16, right: 16, top: 80, bottom: 14 })
     .linearGradient({
       angle: 135,
       colors: [['#FF7B54', 0], ['#FF9F6B', 1]]
     })
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
   }
 
   @Builder
@@ -631,35 +680,28 @@ struct TalentDetailPage {
         }
         .alignItems(HorizontalAlign.Start)
         Blank()
-        Button(this.showAIInterview ? '收起' : '发起')
-          .height(32)
-          .fontSize(12)
-          .backgroundColor(AppConstants.COLOR_AI_PURPLE)
-          .fontColor('#FFFFFF')
-          .borderRadius(16)
-          .padding({ left: 14, right: 14 })
-          .onClick(() => {
-            this.showAIInterview = !this.showAIInterview
-            if (!this.showAIInterview) {
-              AlertDialog.show({
-                title: 'AI 邀约已发送',
-                message: '系统会基于简历重点生成一轮结构化提问建议。'
-              })
-            }
-          })
       }
       .width('100%')
 
-      if (this.showAIInterview) {
-        Column() {
-          this.InterviewPoint('项目真实性核验', '#2E6FD8')
-          this.InterviewPoint('表达逻辑与岗位适配', AppConstants.COLOR_ACCENT)
-          this.InterviewPoint('时间安排与到岗灵活性', '#279255')
-          this.InterviewPoint('综合沟通风险提示', AppConstants.COLOR_AI_PURPLE)
-        }
-        .width('100%')
-        .margin({ top: 14 })
+      Column() {
+        this.InterviewPoint('项目真实性核验', '#2E6FD8')
+        this.InterviewPoint('表达逻辑与岗位适配', AppConstants.COLOR_ACCENT)
+        this.InterviewPoint('时间安排与到岗灵活性', '#279255')
+        this.InterviewPoint('综合沟通风险提示', AppConstants.COLOR_AI_PURPLE)
       }
+      .width('100%')
+      .margin({ top: 14, bottom: 14 })
+
+      Button('🤖 发起AI虚拟面试')
+        .width('100%')
+        .height(44)
+        .fontSize(15)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#FFFFFF')
+        .backgroundColor(AppConstants.COLOR_AI_PURPLE)
+        .borderRadius(22)
+        .enabled(!this.isSendingInterview)
+        .onClick(() => this.handleSendAIInterview())
     }
     .width('100%')
     .padding(18)
@@ -712,9 +754,7 @@ struct TalentDetailPage {
         .backgroundColor(AppConstants.COLOR_ACCENT)
         .fontColor('#FFFFFF')
         .borderRadius(22)
-        .onClick(() => {
-          AlertDialog.show({ message: '面试邀约已发送。' })
-        })
+        .onClick(() => this.handleSendAIInterview())
     }
     .width('100%')
     .justifyContent(FlexAlign.SpaceBetween)

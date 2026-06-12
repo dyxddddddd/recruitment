@@ -53,12 +53,17 @@ export class AppConstants {
   static readonly ROUTE_COMPANY_DETAIL = 'pages/job_seeker/CompanyDetailPage'
   static readonly ROUTE_TALENT_DETAIL = 'pages/recruiter/TalentDetailPage'
   static readonly ROUTE_RECRUITER_AUTH = 'pages/recruiter/AuthPage'
+  static readonly ROUTE_RECRUITER_JOB_MANAGE = 'pages/recruiter/JobManagePage'
   static readonly ROUTE_CHAT = 'pages/ChatPage'
   static readonly ROUTE_APPLICATION_TRACK = 'pages/job_seeker/ApplicationTrackPage'
   static readonly ROUTE_IDENTITY_GUIDE = 'pages/job_seeker/IdentityGuidePage'
   static readonly ROUTE_AI_ASSISTANT = 'pages/job_seeker/AIRecruiterAssistantPage'
   static readonly ROUTE_CONTRACT_REVIEW = 'pages/job_seeker/ContractReviewPage'
   static readonly ROUTE_AI_DIGITAL_TWIN = 'pages/job_seeker/AIDigitalTwinPage'
+  static readonly ROUTE_AI_INTERVIEW = 'pages/job_seeker/AIInterviewPage'
+  static readonly ROUTE_AI_INTERVIEW_VIDEO = 'pages/job_seeker/AIInterviewVideoPage'
+  static readonly ROUTE_AI_INTERVIEW_HUB = 'pages/job_seeker/AIInterviewHubPage'
+  static readonly ROUTE_RECRUITER_AI_ASSESSMENT = 'pages/recruiter/RecruiterAIAssessmentDashboardPage'
 }
 
 const KEY_CURRENT_USER = 'app_current_user'

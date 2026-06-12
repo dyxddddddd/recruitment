@@ -17,6 +17,10 @@
       "value": "用于拍摄或选择图片，完成合同审查和课表识别"
     },
     {
+      "name": "microphone_permission_reason",
+      "value": "用于AI面试中的语音回答录制"
+    },
+    {
       "name": "location_permission_reason",
       "value": "用于获取当前位置并推荐附近岗位与企业信息"
     }

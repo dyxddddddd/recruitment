@@ -16,6 +16,7 @@ struct RecruiterMainPage {
   @State currentTabIndex: number = 0
   @StorageLink('total_unread') totalUnread: number = 0
   @StorageLink('msg_refresh') @Watch('refreshTotalUnread') refreshTrigger: number = 0
+  @StorageLink('recruiter_switch_tab') @Watch('onTabSwitch') pendingTabSwitch: number = -1
   private tabsController: TabsController = new TabsController()
   private stompClient: StompClient | null = null
   private messageDao: MessageDao = new MessageDao()
@@ -37,6 +38,14 @@ struct RecruiterMainPage {
     if (AppState.currentUser) {
       const total = await this.messageDao.getUnreadTotal(AppState.currentUser.userId)
       AppStorage.setOrCreate<number>('total_unread', total)
+    }
+  }
+
+  onTabSwitch(): void {
+    if (this.pendingTabSwitch >= 0) {
+      this.currentTabIndex = this.pendingTabSwitch
+      this.tabsController.changeIndex(this.pendingTabSwitch)
+      AppStorage.setOrCreate<number>('recruiter_switch_tab', -1)
     }
   }
 
@@ -108,14 +117,16 @@ struct RecruiterMainPage {
               .fontSize(10)
               .fontColor('#FFD700')
               .fontWeight(FontWeight.Bold)
+
               .padding({ left: 6, right: 6, top: 2, bottom: 2 })
               .border({ width: 1, color: '#FFD700', radius: 8 })
               .margin({ left: 6 })
           }
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 28, bottom: 12 })
+        .padding({ left: 20, right: 20, top: 60, bottom: 12 })
         .backgroundColor(AppConstants.COLOR_ACCENT)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
 
         // Tab内容区
         Tabs({
@@ -210,7 +221,7 @@ struct RecruiterMainPage {
   }
 
   getTabIcon(index: number): string {
-    const icons = ['👥', '👑', '', '💬', '👤']
+    const icons: string[] = ['👥', '👑', '', '💬', '👤']
     return icons[index]
   }
 }

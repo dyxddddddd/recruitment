@@ -369,6 +369,20 @@ export class MessageDao {
     }
   }
 
+  async insertSystemMessage(userId: string, title: string, content: string, type: string): Promise<void> {
+    const store = await this.helper.getStore()
+    const bucket: relationalStore.ValuesBucket = {
+      message_id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      user_id: userId,
+      title: title,
+      content: content,
+      type: type,
+      is_read: 0,
+      timestamp: Date.now()
+    }
+    await store.insert(TABLE_SYSTEM_MESSAGE, bucket)
+  }
+
   async getSystemMessages(userId: string): Promise<SystemMessage[]> {
     const store = await this.helper.getStore()
     const predicates = new relationalStore.RdbPredicates(TABLE_SYSTEM_MESSAGE)

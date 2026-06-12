@@ -3,7 +3,7 @@
 import { relationalStore } from '@kit.ArkData'
 import { DatabaseHelper } from '../database/DatabaseHelper'
 import { TABLE_USER, TABLE_RESUME, TABLE_EDUCATION, TABLE_EXPERIENCE, TABLE_SCHEDULE } from '../database/Tables'
-import { UserProfile, UserRole, StudentType, Gender, VipLevel } from '../model/UserModel'
+import { UserProfile, UserRole, StudentType, Gender, VipLevel, AuthStatus } from '../model/UserModel'
 
 export class UserDao {
   private helper: DatabaseHelper = DatabaseHelper.getInstance()
@@ -49,12 +49,25 @@ export class UserDao {
       is_guest: user.isGuest ? 1 : 0,
       avatar: user.avatar ?? '',
       company_name: user.companyName ?? '',
+      company_address: user.companyAddress ?? '',
+      company_industry: user.companyIndustry ?? '',
+      company_scale: user.companyScale ?? '',
+      legal_person: user.legalPerson ?? '',
+      contact_position: user.contactPosition ?? '',
+      company_email: user.companyEmail ?? '',
       id_card: user.idCard ?? '',
       business_license: user.businessLicense ?? '',
       vip_level: user.vipLevel ?? VipLevel.NORMAL,
       position_count: user.positionCount ?? 0,
       hr_real_name: user.hrRealName ?? '',
       password: user.password ?? '',
+      auth_status: user.authStatus ?? 0,
+      id_card_front_image: user.idCardFrontImage ?? '',
+      id_card_back_image: user.idCardBackImage ?? '',
+      face_image: user.faceImage ?? '',
+      auth_submit_time: user.authSubmitTime ?? 0,
+      auth_approve_time: user.authApproveTime ?? 0,
+      auth_reject_reason: user.authRejectReason ?? '',
       create_time: Date.now(),
       update_time: Date.now(),
       is_login: 1
@@ -81,12 +94,25 @@ export class UserDao {
       is_guest: user.isGuest ? 1 : 0,
       avatar: user.avatar ?? '',
       company_name: user.companyName ?? '',
+      company_address: user.companyAddress ?? '',
+      company_industry: user.companyIndustry ?? '',
+      company_scale: user.companyScale ?? '',
+      legal_person: user.legalPerson ?? '',
+      contact_position: user.contactPosition ?? '',
+      company_email: user.companyEmail ?? '',
       id_card: user.idCard ?? '',
       business_license: user.businessLicense ?? '',
       vip_level: user.vipLevel ?? VipLevel.NORMAL,
       position_count: user.positionCount ?? 0,
       hr_real_name: user.hrRealName ?? '',
       password: user.password && user.password.length > 0 ? user.password : (existing?.password ?? ''),
+      auth_status: user.authStatus ?? existing?.authStatus ?? 0,
+      id_card_front_image: user.idCardFrontImage ?? existing?.idCardFrontImage ?? '',
+      id_card_back_image: user.idCardBackImage ?? existing?.idCardBackImage ?? '',
+      face_image: user.faceImage ?? existing?.faceImage ?? '',
+      auth_submit_time: user.authSubmitTime ?? existing?.authSubmitTime ?? 0,
+      auth_approve_time: user.authApproveTime ?? existing?.authApproveTime ?? 0,
+      auth_reject_reason: user.authRejectReason ?? existing?.authRejectReason ?? '',
       update_time: Date.now()
     }
     const predicates = new relationalStore.RdbPredicates(TABLE_USER)
@@ -314,6 +340,33 @@ export class UserDao {
     await store.update(valueBucket, predicates)
   }
 
+  async submitAuth(userId: string, authData: Partial<UserProfile>): Promise<void> {
+    const store = await this.helper.getStore()
+    const valueBucket: relationalStore.ValuesBucket = {
+      hr_real_name: authData.hrRealName ?? '',
+      id_card: authData.idCard ?? '',
+      company_name: authData.companyName ?? '',
+      company_address: authData.companyAddress ?? '',
+      company_industry: authData.companyIndustry ?? '',
+      company_scale: authData.companyScale ?? '',
+      legal_person: authData.legalPerson ?? '',
+      contact_position: authData.contactPosition ?? '',
+      company_email: authData.companyEmail ?? '',
+      business_license: authData.businessLicense ?? '',
+      id_card_front_image: authData.idCardFrontImage ?? '',
+      id_card_back_image: authData.idCardBackImage ?? '',
+      face_image: authData.faceImage ?? '',
+      auth_status: authData.authStatus ?? (AuthStatus.PENDING as number),
+      auth_submit_time: authData.authSubmitTime ?? Date.now(),
+      auth_approve_time: authData.authApproveTime ?? 0,
+      auth_reject_reason: authData.authRejectReason ?? '',
+      update_time: Date.now()
+    }
+    const predicates = new relationalStore.RdbPredicates(TABLE_USER)
+    predicates.equalTo('user_id', userId)
+    await store.update(valueBucket, predicates)
+  }
+
   async updatePassword(userId: string, password: string): Promise<void> {
     const store = await this.helper.getStore()
     const valueBucket: relationalStore.ValuesBucket = {
@@ -416,12 +469,25 @@ export class UserDao {
       isGuest: row.getLong(row.getColumnIndex('is_guest')) === 1,
       avatar: row.getString(row.getColumnIndex('avatar')),
       companyName: row.getString(row.getColumnIndex('company_name')),
+      companyAddress: row.getString(row.getColumnIndex('company_address')),
+      companyIndustry: row.getString(row.getColumnIndex('company_industry')),
+      companyScale: row.getString(row.getColumnIndex('company_scale')),
+      legalPerson: row.getString(row.getColumnIndex('legal_person')),
+      contactPosition: row.getString(row.getColumnIndex('contact_position')),
+      companyEmail: row.getString(row.getColumnIndex('company_email')),
       idCard: row.getString(row.getColumnIndex('id_card')),
       businessLicense: row.getString(row.getColumnIndex('business_license')),
       vipLevel: (vipLevelStr === VipLevel.VIP ? VipLevel.VIP : VipLevel.NORMAL) as VipLevel,
       positionCount: row.getLong(row.getColumnIndex('position_count')),
       hrRealName: row.getString(row.getColumnIndex('hr_real_name')),
-      password: row.getString(row.getColumnIndex('password'))
+      password: row.getString(row.getColumnIndex('password')),
+      authStatus: row.getLong(row.getColumnIndex('auth_status')),
+      idCardFrontImage: row.getString(row.getColumnIndex('id_card_front_image')),
+      idCardBackImage: row.getString(row.getColumnIndex('id_card_back_image')),
+      faceImage: row.getString(row.getColumnIndex('face_image')),
+      authSubmitTime: row.getLong(row.getColumnIndex('auth_submit_time')),
+      authApproveTime: row.getLong(row.getColumnIndex('auth_approve_time')),
+      authRejectReason: row.getString(row.getColumnIndex('auth_reject_reason'))
     }
   }
 }

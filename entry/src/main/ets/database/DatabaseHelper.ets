@@ -42,6 +42,8 @@ export class DatabaseHelper {
     await this.migrateV3ToV4()
     await this.migrateV4ToV5()
     await this.migrateV5ToV6()
+    await this.migrateV6ToV7()
+    await this.migrateV7ToV8()
     await DemoDataInitializer.seed(this.store)
 
     return this.store
@@ -108,6 +110,57 @@ export class DatabaseHelper {
       await this.store.executeSql('ALTER TABLE tb_chat_message ADD COLUMN receiver_id TEXT')
     } catch (e) {
       // column may already exist
+    }
+  }
+
+  private async migrateV6ToV7(): Promise<void> {
+    if (!this.store) return
+    const alters: string[] = [
+      'ALTER TABLE tb_user ADD COLUMN auth_status INTEGER DEFAULT 0',
+      'ALTER TABLE tb_user ADD COLUMN id_card_front_image TEXT',
+      'ALTER TABLE tb_user ADD COLUMN id_card_back_image TEXT',
+      'ALTER TABLE tb_user ADD COLUMN face_image TEXT',
+      'ALTER TABLE tb_user ADD COLUMN auth_submit_time INTEGER',
+      'ALTER TABLE tb_user ADD COLUMN auth_approve_time INTEGER',
+      'ALTER TABLE tb_user ADD COLUMN auth_reject_reason TEXT',
+      'ALTER TABLE tb_user ADD COLUMN company_address TEXT',
+      'ALTER TABLE tb_user ADD COLUMN company_industry TEXT',
+      'ALTER TABLE tb_user ADD COLUMN company_scale TEXT',
+      'ALTER TABLE tb_user ADD COLUMN legal_person TEXT',
+      'ALTER TABLE tb_user ADD COLUMN contact_position TEXT',
+      'ALTER TABLE tb_user ADD COLUMN company_email TEXT'
+    ]
+    for (let i = 0; i < alters.length; i++) {
+      try {
+        await this.store.executeSql(alters[i])
+      } catch (e) {
+        // column may already exist
+      }
+    }
+  }
+
+  private async migrateV7ToV8(): Promise<void> {
+    if (!this.store) return
+    try {
+      await this.store.executeSql(
+        `CREATE TABLE IF NOT EXISTS tb_ai_interview (
+          interview_id TEXT PRIMARY KEY,
+          recruiter_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          job_id TEXT NOT NULL,
+          application_id TEXT NOT NULL,
+          status TEXT DEFAULT 'invited',
+          questions TEXT,
+          answers TEXT,
+          assessment_result TEXT,
+          total_score INTEGER DEFAULT 0,
+          invite_time INTEGER,
+          start_time INTEGER,
+          complete_time INTEGER
+        )`
+      )
+    } catch (e) {
+      // table may already exist
     }
   }
 

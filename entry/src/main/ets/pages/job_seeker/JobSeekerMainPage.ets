@@ -103,7 +103,7 @@ struct JobSeekerMainPage {
             .borderRadius(10)
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 60, bottom: 12 })
+        .padding({ left: 20, right: 20, top: 80, bottom: 12 })
         .backgroundColor(AppConstants.COLOR_PRIMARY)
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
 

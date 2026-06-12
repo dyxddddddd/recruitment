@@ -13,11 +13,16 @@
     "pages/recruiter/RecruiterMainPage",
     "pages/recruiter/TalentDetailPage",
     "pages/recruiter/AuthPage",
+    "pages/recruiter/JobManagePage",
     "pages/ChatPage",
     "pages/job_seeker/IdentityGuidePage",
     "pages/job_seeker/AIRecruiterAssistantPage",
     "pages/job_seeker/ContractReviewPage",
     "pages/job_seeker/AIDigitalTwinPage",
-    "pages/job_seeker/ApplicationTrackPage"
+    "pages/job_seeker/ApplicationTrackPage",
+    "pages/job_seeker/AIInterviewPage",
+    "pages/job_seeker/AIInterviewVideoPage",
+    "pages/job_seeker/AIInterviewHubPage",
+    "pages/recruiter/RecruiterAIAssessmentDashboardPage"
   ]
 }
