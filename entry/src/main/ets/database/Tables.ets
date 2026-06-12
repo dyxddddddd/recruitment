@@ -9,6 +9,7 @@ export const CREATE_TABLE_USER = `
 CREATE TABLE IF NOT EXISTS ${TABLE_USER} (
   user_id TEXT PRIMARY KEY,
   phone TEXT,
+  email TEXT,
   role TEXT NOT NULL,
   student_type TEXT,
   real_name TEXT,

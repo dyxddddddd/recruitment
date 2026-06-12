@@ -13,6 +13,13 @@ struct Index {
   async aboutToAppear(): Promise<void> {
     AppState.syncFromStorage()
 
+    if (!AppState.isLoggedIn) {
+      AppState.currentUser = null
+      AppState.isGuest = true
+      AppState.syncToStorage()
+      return
+    }
+
     const loggedInUser = await this.userDao.getLoggedInUser()
     if (loggedInUser) {
       const normalizedLoggedInUser = await this.normalizeStudentType(loggedInUser)

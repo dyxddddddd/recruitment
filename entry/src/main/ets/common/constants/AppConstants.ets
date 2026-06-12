@@ -12,6 +12,7 @@ export class AppConstants {
   static readonly DEEPSEEK_API_KEY = 'sk-eb8ad2c97cb2406d9d5bf5a7a51d3717'
   static readonly WECHAT_APP_ID = ''
   static readonly QQ_APP_ID = ''
+  static readonly THIRD_PARTY_AUTH_MOCK_ENABLED = true
   static readonly WECHAT_LOGIN_SCOPE = 'snsapi_userinfo'
   static readonly QQ_LOGIN_SCOPE = 'get_user_info'
   static readonly ENTRY_ABILITY_NAME = 'EntryAbility'
@@ -44,7 +45,9 @@ export class AppConstants {
   static readonly ROUTE_INDEX = 'pages/Index'
   static readonly ROUTE_WELCOME = 'pages/WelcomePage'
   static readonly ROUTE_LOGIN = 'pages/login/LoginPage'
+  static readonly ROUTE_MOCK_SOCIAL_AUTH = 'pages/login/MockSocialAuthPage'
   static readonly ROUTE_BIND_PHONE = 'pages/login/BindPhonePage'
+  static readonly ROUTE_SET_PASSWORD = 'pages/login/SetPasswordPage'
   static readonly ROUTE_JOB_SEEKER_MAIN = 'pages/job_seeker/JobSeekerMainPage'
   static readonly ROUTE_RECRUITER_MAIN = 'pages/recruiter/RecruiterMainPage'
   static readonly ROUTE_RESUME_EDIT = 'pages/job_seeker/ResumeEditPage'

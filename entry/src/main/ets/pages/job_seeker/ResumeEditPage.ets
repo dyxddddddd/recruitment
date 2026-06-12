@@ -119,7 +119,7 @@ struct ResumeEditPage {
       realName: AppState.currentUser?.realName || '',
       gender: AppState.currentUser?.gender || '',
       birthday: AppState.currentUser?.birthday || '',
-      education: AppState.currentUser?.education || '鏈',
+      education: AppState.currentUser?.education || '',
       school: AppState.currentUser?.school || '',
       major: AppState.currentUser?.major || '',
       graduationYear: '',
@@ -141,7 +141,7 @@ struct ResumeEditPage {
   }
 
   emptyEducation(): EducationItem {
-    return { schoolName: '', major: '', degree: '鏈', startYear: '', endYear: '' }
+    return { schoolName: '', major: '', degree: '本科', startYear: '', endYear: '' }
   }
 
   emptyExperience(): ExperienceItem {
@@ -265,7 +265,7 @@ struct ResumeEditPage {
     }
   }
 
-  buildUserSnapshot(realName: string, phone: string, education: string, school: string, major: string,
+  buildUserSnapshot(realName: string, phone: string, email: string, education: string, school: string, major: string,
     expectedPosition: string, expectedSalary: string, currentCity: string): import('../../model/UserModel').UserProfile | null {
     if (!AppState.currentUser) {
       return null
@@ -273,6 +273,7 @@ struct ResumeEditPage {
     return {
       userId: AppState.currentUser.userId,
       phone: phone,
+      email: email,
       password: AppState.currentUser.password,
       role: AppState.currentUser.role,
       studentType: AppState.currentUser.studentType,
@@ -608,17 +609,18 @@ struct ResumeEditPage {
   }
 
   private normalizeEducationText(value: string): string {
-    if (value.indexOf('鍗氬＋') >= 0) {
-      return '鍗氬＋'
+    if (value.indexOf('博士') >= 0 || value.indexOf('鍗氬＋') >= 0) {
+      return '博士'
     }
-    if (value.indexOf('硕士') >= 0 || value.indexOf('研究生') >= 0) {
-      return '纭曞＋'
+    if (value.indexOf('硕士') >= 0 || value.indexOf('研究生') >= 0 || value.indexOf('纭曞＋') >= 0) {
+      return '硕士'
     }
-    if (value.indexOf('鏈') >= 0) {
-      return '鏈'
+    if (value.indexOf('本科') >= 0 || value.indexOf('鏈') >= 0) {
+      return '本科'
     }
-    if (value.indexOf('澶т笓') >= 0 || value.indexOf('涓撶') >= 0) {
-      return '澶т笓'
+    if (value.indexOf('大专') >= 0 || value.indexOf('专科') >= 0
+      || value.indexOf('澶т笓') >= 0 || value.indexOf('涓撶') >= 0) {
+      return '大专'
     }
     return value
   }
@@ -1042,6 +1044,7 @@ struct ResumeEditPage {
     const nextUser = this.buildUserSnapshot(
       this.resume.realName,
       this.resume.phone,
+      this.resume.email,
       this.resume.education,
       this.resume.school,
       this.resume.major,
