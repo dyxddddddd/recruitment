@@ -45,8 +45,8 @@ export class DatabaseHelper {
 
     await this.migrateV6ToV7()
     await this.migrateV7ToV8()
+    await this.migrateV8ToV9()
 
-    await this.migrateV5ToV6()
     await DemoDataInitializer.seed(this.store)
 
     return this.store
@@ -164,6 +164,16 @@ export class DatabaseHelper {
     } catch (e) {
       // table may already exist
     }
+  }
+
+  private async migrateV8ToV9(): Promise<void> {
+    if (!this.store) return
+    try {
+      await this.store.executeSql('ALTER TABLE tb_user ADD COLUMN vip_expire_time INTEGER DEFAULT 0')
+    } catch (e) { /* column may already exist */ }
+    try {
+      await this.store.executeSql('ALTER TABLE tb_user ADD COLUMN vip_lifetime INTEGER DEFAULT 0')
+    } catch (e) { /* column may already exist */ }
   }
 
   async close(): Promise<void> {

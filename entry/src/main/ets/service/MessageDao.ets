@@ -189,11 +189,18 @@ export class MessageDao {
 
   // 确保会话存在
   async ensureConversation(conversationId: string, peerId: string, peerName: string): Promise<void> {
+    const store = await this.helper.getStore()
     const exists = await this.conversationExists(conversationId)
     if (exists) {
+      if (peerName) {
+        try {
+          await store.executeSql(
+            `UPDATE ${TABLE_CHAT_SESSION} SET peer_name = '${this.escapeSql(peerName)}', peer_id = '${peerId}' WHERE session_id = '${conversationId}' AND (peer_name = '' OR peer_name IS NULL)`
+          )
+        } catch (_e) { /* ignore */ }
+      }
       return
     }
-    const store = await this.helper.getStore()
     const bucket: relationalStore.ValuesBucket = {
       session_id: conversationId,
       peer_id: peerId,

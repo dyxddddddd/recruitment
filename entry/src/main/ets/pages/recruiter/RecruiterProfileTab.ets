@@ -55,8 +55,9 @@ interface InboxItem {
 export struct RecruiterProfileTab {
   @State showAIDashboard: boolean = false
   @State jobCount: number = 0
-  @State resumeCount: number = 0
-  @State taskCount: number = 0
+  @State todayResumeCount: number = 0
+  @State pendingTaskReviewCount: number = 0
+  @State todayAIInterviewCount: number = 0
   @State showSettings: boolean = false
   @State oldPassword: string = ''
   @State newPassword: string = ''
@@ -101,6 +102,9 @@ export struct RecruiterProfileTab {
     try {
       const store = await DatabaseHelper.getInstance().getStore()
       const recruiterId = user.userId
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayMs = todayStart.getTime()
 
       // 在招岗位数
       const jobRs = await store.querySql(
@@ -111,23 +115,32 @@ export struct RecruiterProfileTab {
       }
       jobRs.close()
 
-      // 收到简历数（通过该招聘者发布的职位）
+      // 今日新增简历（今日投递数）
       const appRs = await store.querySql(
-        `SELECT COUNT(*) AS cnt FROM ${TABLE_APPLICATION} WHERE job_id IN (SELECT job_id FROM ${TABLE_JOB} WHERE recruiter_id = '${recruiterId}')`
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_APPLICATION} WHERE job_id IN (SELECT job_id FROM ${TABLE_JOB} WHERE recruiter_id = '${recruiterId}') AND apply_time >= ${todayMs}`
       )
       if (appRs.goToFirstRow()) {
-        this.resumeCount = appRs.getLong(appRs.getColumnIndex('cnt'))
+        this.todayResumeCount = appRs.getLong(appRs.getColumnIndex('cnt'))
       }
       appRs.close()
 
-      // 微任务数
+      // 待处理微任务验收（已接取未完成）
       const taskRs = await store.querySql(
-        `SELECT COUNT(*) AS cnt FROM ${TABLE_MICRO_TASK} WHERE recruiter_id = '${recruiterId}'`
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_MICRO_TASK} WHERE recruiter_id = '${recruiterId}' AND status = 'accepted'`
       )
       if (taskRs.goToFirstRow()) {
-        this.taskCount = taskRs.getLong(taskRs.getColumnIndex('cnt'))
+        this.pendingTaskReviewCount = taskRs.getLong(taskRs.getColumnIndex('cnt'))
       }
       taskRs.close()
+
+      // 今日AI面试数量（今日完成的）
+      const aiRs = await store.querySql(
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_AI_INTERVIEW} WHERE recruiter_id = '${recruiterId}' AND complete_time >= ${todayMs}`
+      )
+      if (aiRs.goToFirstRow()) {
+        this.todayAIInterviewCount = aiRs.getLong(aiRs.getColumnIndex('cnt'))
+      }
+      aiRs.close()
     } catch (e) {
       // fallback to zero
     }
@@ -472,7 +485,7 @@ export struct RecruiterProfileTab {
               .fontWeight(FontWeight.Bold)
               .fontColor('#1A1A1A')
             Blank()
-            Text(`${this.jobCount + this.taskCount} 个`)
+            Text(`${this.jobCount} 个`)
               .fontSize(11)
               .fontColor('#999999')
           }
@@ -486,11 +499,11 @@ export struct RecruiterProfileTab {
                 Text('📄')
                   .fontSize(20)
                   .margin({ bottom: 4 })
-                Text(`${this.resumeCount}`)
+                Text(`${this.todayResumeCount}`)
                   .fontSize(26)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#4A90D9')
-                Text('收到简历')
+                Text('今日新增简历')
                   .fontSize(10)
                   .fontColor('#888888')
                   .margin({ top: 2 })
@@ -504,14 +517,14 @@ export struct RecruiterProfileTab {
 
             GridItem() {
               Column() {
-                Text('⚡')
+                Text('✅')
                   .fontSize(20)
                   .margin({ bottom: 4 })
-                Text(`${this.taskCount}`)
+                Text(`${this.pendingTaskReviewCount}`)
                   .fontSize(26)
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#FF8C00')
-                Text('微任务')
+                Text('待处理微任务')
                   .fontSize(10)
                   .fontColor('#888888')
                   .margin({ top: 2 })
@@ -521,6 +534,27 @@ export struct RecruiterProfileTab {
               .justifyContent(FlexAlign.Center)
               .borderRadius(12)
               .backgroundColor('#FFF8F0')
+            }
+
+            GridItem() {
+              Column() {
+                Text('🤖')
+                  .fontSize(20)
+                  .margin({ bottom: 4 })
+                Text(`${this.todayAIInterviewCount}`)
+                  .fontSize(26)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(AppConstants.COLOR_ACCENT)
+                Text('今日AI面试')
+                  .fontSize(10)
+                  .fontColor('#888888')
+                  .margin({ top: 2 })
+              }
+              .width('100%')
+              .height('100%')
+              .justifyContent(FlexAlign.Center)
+              .borderRadius(12)
+              .backgroundColor('#FFF3EE')
             }
 
             GridItem() {
@@ -542,27 +576,6 @@ export struct RecruiterProfileTab {
               .justifyContent(FlexAlign.Center)
               .borderRadius(12)
               .backgroundColor('#F0FFF0')
-            }
-
-            GridItem() {
-              Column() {
-                Text('🎯')
-                  .fontSize(20)
-                  .margin({ bottom: 4 })
-                Text(`${this.getMatchRate()}%`)
-                  .fontSize(26)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor('#9B59B6')
-                Text('简历匹配率')
-                  .fontSize(10)
-                  .fontColor('#888888')
-                  .margin({ top: 2 })
-              }
-              .width('100%')
-              .height('100%')
-              .justifyContent(FlexAlign.Center)
-              .borderRadius(12)
-              .backgroundColor('#F8F0FF')
             }
           }
           .columnsTemplate('1fr 1fr')
@@ -626,7 +639,7 @@ export struct RecruiterProfileTab {
 
                 if (this.assessmentLoading) {
                   Column() {
-                    LoadingProgress().width(24).height(24).color('#9B59B6')
+                    LoadingProgress().width(24).height(24).color(AppConstants.COLOR_ACCENT)
                     Text('加载评估数据...').fontSize(12).fontColor('#999999').margin({ top: 8 })
                   }
                   .width('100%')
@@ -654,7 +667,7 @@ export struct RecruiterProfileTab {
                             .width(38)
                             .height(38)
                             .textAlign(TextAlign.Center)
-                            .backgroundColor(item.recommendation ? (item.totalScore >= 80 ? '#52C41A' : (item.totalScore >= 60 ? '#FAAD14' : '#FF4D4F')) : '#9B59B6')
+                            .backgroundColor(item.recommendation ? (item.totalScore >= 80 ? '#52C41A' : (item.totalScore >= 60 ? '#FAAD14' : '#FF4D4F')) : AppConstants.COLOR_ACCENT)
                             .borderRadius(19)
                             .margin({ right: 10 })
                           Column() {
@@ -705,9 +718,9 @@ export struct RecruiterProfileTab {
                               Text('待评估')
                                 .fontSize(12)
                                 .fontWeight(FontWeight.Bold)
-                                .fontColor('#9B59B6')
+                                .fontColor(AppConstants.COLOR_ACCENT)
                                 .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-                                .backgroundColor('#F8F0FF')
+                                .backgroundColor('#FFF3EE')
                                 .borderRadius(8)
                             }
                           }
@@ -746,8 +759,8 @@ export struct RecruiterProfileTab {
                   .height(40)
                   .fontSize(13)
                   .fontWeight(FontWeight.Medium)
-                  .backgroundColor('#F8F4FF')
-                  .fontColor('#9B59B6')
+                  .backgroundColor('#FFF3EE')
+                  .fontColor(AppConstants.COLOR_ACCENT)
                   .borderRadius(10)
                   .margin({ top: 14 })
                   .onClick(() => {
@@ -783,7 +796,7 @@ export struct RecruiterProfileTab {
             .onClick(() => { this.loadInterviewList(); this.showInterviewMgmt = true })
 
             Column() {
-              this.MenuItem('🔍', '#9B59B6', '#F8F0FF', '人才搜索历史', '查看所有投递者记录')
+              this.MenuItem('🔍', AppConstants.COLOR_ACCENT, '#FFF3EE', '人才搜索历史', '查看所有投递者记录')
             }
             .onClick(() => { this.loadApplicantList(); this.showTalentHistory = true })
 
@@ -822,8 +835,8 @@ export struct RecruiterProfileTab {
             .height(46)
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
-            .backgroundColor('#FFFFFF')
-            .fontColor('#FF4D4F')
+            .backgroundColor('#FF6B35')
+            .fontColor('#fff')
             .borderRadius(14)
             .border({ width: 1, color: '#FFE0E0' })
             .margin({ bottom: 24 })
@@ -932,7 +945,7 @@ export struct RecruiterProfileTab {
             .height(46)
             .fontSize(15)
             .fontWeight(FontWeight.Bold)
-            .backgroundColor('#667eea')
+            .backgroundColor(AppConstants.COLOR_ACCENT)
             .fontColor('#FFFFFF')
             .borderRadius(12)
             .margin({ bottom: 10 })
@@ -1227,7 +1240,7 @@ export struct RecruiterProfileTab {
         if (this.inboxSelectMode && this.selectedInboxIds.size > 0) {
           Button(`发送AI面试邀请 (${this.selectedInboxIds.size})`)
             .width('100%').height(46).fontSize(15).fontWeight(FontWeight.Bold)
-            .fontColor('#FFFFFF').backgroundColor('#9B59B6').borderRadius(12)
+            .fontColor('#FFFFFF').backgroundColor(AppConstants.COLOR_ACCENT).borderRadius(12)
             .margin({ top: 14 })
             .onClick(() => {
               AlertDialog.show({
@@ -1466,11 +1479,11 @@ export struct RecruiterProfileTab {
           }
           GridItem() {
             Column() {
-              Text(`${this.computeConversionRate()}%`).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#9B59B6')
+              Text(`${this.computeConversionRate()}%`).fontSize(22).fontWeight(FontWeight.Bold).fontColor(AppConstants.COLOR_ACCENT)
               Text('转化率').fontSize(10).fontColor('#999999').margin({ top: 2 })
             }
             .width('100%').height('100%').justifyContent(FlexAlign.Center)
-            .backgroundColor('#F8F0FF').borderRadius(10)
+            .backgroundColor('#FFF3EE').borderRadius(10)
           }
         }
         .columnsTemplate('1fr 1fr').rowsTemplate('1fr 1fr')
@@ -1482,7 +1495,7 @@ export struct RecruiterProfileTab {
           this.SummaryLine('岗位平均投递数', this.reportPublishedJobs > 0 ? `${(this.reportTotalApps / this.reportPublishedJobs).toFixed(1)} 份` : '暂无数据')
           this.SummaryLine('面试转化率', `${this.computeConversionRate()}%`)
           this.SummaryLine('当前在招岗位', `${this.jobCount} 个`)
-          this.SummaryLine('累计收到简历', `${this.resumeCount} 份`)
+          this.SummaryLine('累计收到简历', `${this.todayResumeCount} 份`)
         }
         .width('100%')
       }
@@ -1567,7 +1580,7 @@ export struct RecruiterProfileTab {
   }
 
   getMatchRate(): number {
-    if (this.resumeCount > 0 && this.jobCount > 0) return Math.round((this.resumeCount / (this.jobCount * 5)) * 100)
+    if (this.todayResumeCount > 0 && this.jobCount > 0) return Math.round((this.todayResumeCount / (this.jobCount * 5)) * 100)
     return 0
   }
 

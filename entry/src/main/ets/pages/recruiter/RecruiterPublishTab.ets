@@ -711,9 +711,9 @@ export struct RecruiterPublishTab {
                 if (this.wasAIGenerated) {
                   Text('🤖 AI已生成')
                     .fontSize(10)
-                    .fontColor(AppConstants.COLOR_AI_PURPLE)
+                    .fontColor(AppConstants.COLOR_ACCENT)
                     .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                    .backgroundColor('rgba(155,89,182,0.1)')
+                    .backgroundColor('rgba(255,107,53,0.1)')
                     .borderRadius(8)
                     .margin({ right: 6 })
                 }
@@ -755,10 +755,10 @@ export struct RecruiterPublishTab {
 
               if (this.isAIGenerating) {
                 Row() {
-                  LoadingProgress().width(16).height(16).color(AppConstants.COLOR_AI_PURPLE)
+                  LoadingProgress().width(16).height(16).color(AppConstants.COLOR_ACCENT)
                   Text(' AI生成中...')
                     .fontSize(12)
-                    .fontColor(AppConstants.COLOR_AI_PURPLE)
+                    .fontColor(AppConstants.COLOR_ACCENT)
                     .margin({ left: 6 })
                 }
                 .margin({ bottom: 8 })

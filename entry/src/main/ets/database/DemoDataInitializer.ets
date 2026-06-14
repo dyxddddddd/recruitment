@@ -5,7 +5,9 @@ import {
   TABLE_COMPANY,
   TABLE_CAREER_TALK,
   TABLE_COMMUNITY_POST,
-  TABLE_POST_COMMENT
+  TABLE_POST_COMMENT,
+  TABLE_CHAT_SESSION,
+  TABLE_CHAT_MESSAGE
 } from './Tables'
 
 interface SeedJob {
@@ -122,6 +124,7 @@ export class DemoDataInitializer {
     await DemoDataInitializer.seedJobs(store, now)
     await DemoDataInitializer.seedPosts(store, now)
     await DemoDataInitializer.seedComments(store, now)
+    await DemoDataInitializer.seedChatSessions(store, now)
   }
 
   private static async seedUsers(store: relationalStore.RdbStore, now: number): Promise<void> {
@@ -569,5 +572,37 @@ export class DemoDataInitializer {
         ('${comment.commentId}', '${comment.postId}', '${comment.userId}', '${escapeSql(comment.content)}', ${comment.isAnonymous ? 1 : 0}, ${now - i * 1800000})`
       )
     }
+  }
+
+  private static async seedChatSessions(store: relationalStore.RdbStore, now: number): Promise<void> {
+    const conv1 = 'recruiter_demo_001:student_demo_001'
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_CHAT_SESSION}
+      (session_id, peer_id, peer_name, peer_avatar, last_message, last_message_time, unread_count, is_ai_agent)
+      VALUES ('${conv1}', 'student_demo_001', '校园同学', '', '你好 HR，我对贵公司的实习岗位比较感兴趣。', ${now}, 1, 0)`
+    )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_CHAT_MESSAGE}
+      (message_id, session_id, sender_id, receiver_id, content, timestamp, is_ai_agent_reply, message_type, is_read)
+      VALUES ('msg_demo_seed_1', '${conv1}', 'student_demo_001', 'recruiter_demo_001', '你好 HR，我对贵公司的实习岗位比较感兴趣。', ${now - 3600000}, 0, 'text', 0)`
+    )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_CHAT_MESSAGE}
+      (message_id, session_id, sender_id, receiver_id, content, timestamp, is_ai_agent_reply, message_type, is_read)
+      VALUES ('msg_demo_seed_2', '${conv1}', 'recruiter_demo_001', 'student_demo_001', '你好，方便介绍一下你的项目经历吗？', ${now - 1800000}, 0, 'text', 1)`
+    )
+
+    // 另一个学生的会话
+    const conv2 = 'recruiter_demo_001:student_demo_002'
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_CHAT_SESSION}
+      (session_id, peer_id, peer_name, peer_avatar, last_message, last_message_time, unread_count, is_ai_agent)
+      VALUES ('${conv2}', 'student_demo_002', '学生用户', '', '后端实习还有 HC 吗？', ${now - 7200000}, 0, 0)`
+    )
+    await store.executeSql(
+      `INSERT OR IGNORE INTO ${TABLE_CHAT_MESSAGE}
+      (message_id, session_id, sender_id, receiver_id, content, timestamp, is_ai_agent_reply, message_type, is_read)
+      VALUES ('msg_demo_seed_3', '${conv2}', 'student_demo_002', 'recruiter_demo_001', '后端实习还有 HC 吗？', ${now - 7200000}, 0, 'text', 1)`
+    )
   }
 }

@@ -415,7 +415,7 @@ struct LoginPage {
     Column() {
       Row() {
         Button() {
-          Image($r('sys.symbol.chevron_left'))
+          Image($r('app.media.ic_back'))
             .width(22)
             .height(22)
             .fillColor('#1A1A1A')

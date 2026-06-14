@@ -42,6 +42,26 @@ export class AppConstants {
   static readonly COLOR_YELLOW_HIGHLIGHT = '#FFFACD'
   static readonly COLOR_AI_PURPLE = '#9B59B6'
 
+  // 设计系统常量
+  static readonly SPACING_XS = 4
+  static readonly SPACING_SM = 8
+  static readonly SPACING_MD = 16
+  static readonly SPACING_LG = 24
+  static readonly SPACING_XL = 32
+
+  static readonly FONT_SIZE_XS = 10
+  static readonly FONT_SIZE_SM = 12
+  static readonly FONT_SIZE_MD = 14
+  static readonly FONT_SIZE_LG = 16
+  static readonly FONT_SIZE_XL = 18
+  static readonly FONT_SIZE_XXL = 20
+  static readonly FONT_SIZE_XXXL = 24
+
+  static readonly BORDER_RADIUS_SM = 6
+  static readonly BORDER_RADIUS_MD = 12
+  static readonly BORDER_RADIUS_LG = 20
+  static readonly BORDER_RADIUS_XL = 28
+
   static readonly ROUTE_INDEX = 'pages/Index'
   static readonly ROUTE_WELCOME = 'pages/WelcomePage'
   static readonly ROUTE_LOGIN = 'pages/login/LoginPage'

@@ -130,7 +130,7 @@ struct BindPhonePage {
     Column() {
       Row() {
         Button() {
-          Image($r('sys.symbol.chevron_left'))
+          Image($r('app.media.ic_back'))
             .width(24)
             .height(24)
             .fillColor('#1A1A1A')

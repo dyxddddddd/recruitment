@@ -1,7 +1,7 @@
 // 数据库表结构定义
 
 export const DATABASE_NAME = 'UniCampus.db'
-export const DATABASE_VERSION = 8
+export const DATABASE_VERSION = 9
 
 // 用户表
 export const TABLE_USER = 'tb_user'
@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS ${TABLE_USER} (
   id_card TEXT,
   business_license TEXT,
   vip_level TEXT DEFAULT 'normal',
+  vip_expire_time INTEGER DEFAULT 0,
+  vip_lifetime INTEGER DEFAULT 0,
   position_count INTEGER DEFAULT 0,
   hr_real_name TEXT,
   password TEXT,

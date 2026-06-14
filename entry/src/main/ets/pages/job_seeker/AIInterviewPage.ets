@@ -245,7 +245,7 @@ export struct AIInterviewPage {
     Column() {
       // 顶部栏
       Row() {
-        Button() { Text('← 返回').fontSize(15).fontColor('#4A90D9') }
+        Button() { Image($r('app.media.ic_back')).width(22).height(22).fillColor('#4A90D9') }
           .backgroundColor(Color.Transparent)
           .padding(0)
           .onClick(() => router.back())

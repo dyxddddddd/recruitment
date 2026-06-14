@@ -59,6 +59,8 @@ export interface UserProfile {
   idCard?: string
   businessLicense?: string    // 营业执照图片路径
   vipLevel?: VipLevel
+  vipExpireTime?: number          // VIP到期时间戳（毫秒），0或undefined为非VIP/已过期
+  vipLifetime?: boolean           // 是否终身会员
   positionCount?: number       // 当前在招岗位数
   hrRealName?: string
   authStatus?: number           // AuthStatus 枚举值

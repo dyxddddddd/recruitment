@@ -366,7 +366,7 @@ export struct RecruiterAIAssessmentDashboardPage {
     Column() {
       // 顶部导航
       Row() {
-        Button() { Text('← 返回').fontSize(15).fontColor('#4A90D9') }
+        Button() { Image($r('app.media.ic_back')).width(22).height(22).fillColor('#4A90D9') }
           .backgroundColor(Color.Transparent).padding(0)
           .onClick(() => router.back())
         Blank()
@@ -401,7 +401,7 @@ export struct RecruiterAIAssessmentDashboardPage {
               Text(this.studentName.charAt(0))
                 .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
                 .width(52).height(52).textAlign(TextAlign.Center)
-                .backgroundColor('#9B59B6').borderRadius(26).margin({ right: 14 })
+                .backgroundColor(AppConstants.COLOR_ACCENT).borderRadius(26).margin({ right: 14 })
               Column() {
                 Text(this.studentName)
                   .fontSize(17).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
@@ -418,7 +418,7 @@ export struct RecruiterAIAssessmentDashboardPage {
             Column() {
               Text('📹').fontSize(36).margin({ bottom: 10 })
               Text('面试视频已提交')
-                .fontSize(17).fontWeight(FontWeight.Bold).fontColor('#9B59B6')
+                .fontSize(17).fontWeight(FontWeight.Bold).fontColor(AppConstants.COLOR_ACCENT)
               Text('学生已完成录制并提交，等待HR评估')
                 .fontSize(12).fontColor('#888888').margin({ top: 6 })
               Text('您可以在此查看学生信息并决定是否直接录用')

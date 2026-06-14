@@ -89,7 +89,7 @@ export struct JobManagePage {
     Column() {
       // 顶部导航栏
       Row() {
-        Button() { Text('← 返回').fontSize(15).fontColor('#4A90D9') }
+        Button() { Image($r('app.media.ic_back')).width(22).height(22).fillColor('#4A90D9') }
           .backgroundColor(Color.Transparent)
           .padding(0)
         Blank()
@@ -382,7 +382,7 @@ export struct JobManagePage {
                 .margin({ bottom: 14 })
 
                 Row() {
-                  Rect().width(3).height(38).fill('#9B59B6').radius(1.5).margin({ right: 10 })
+                  Rect().width(3).height(38).fill(AppConstants.COLOR_ACCENT).radius(1.5).margin({ right: 10 })
                   Text('分析已上传课表的学生空闲时间，\n智能匹配课表互补的候选人组合。')
                     .fontSize(12)
                     .fontColor('#888888')
@@ -398,14 +398,14 @@ export struct JobManagePage {
                   .fontSize(14)
                   .fontWeight(FontWeight.Medium)
                   .fontColor('#FFFFFF')
-                  .backgroundColor(this.showSchedulePuzzle ? '#8E6BBF' : '#9B59B6')
+                  .backgroundColor(this.showSchedulePuzzle ? '#FF8C42' : AppConstants.COLOR_ACCENT)
                   .borderRadius(12)
                   .enabled(!this.isLoadingSchedule)
                   .onClick(() => this.loadSchedulePuzzle())
 
                 if (this.isLoadingSchedule) {
                   Row() {
-                    LoadingProgress().width(14).height(14).color('#9B59B6')
+                    LoadingProgress().width(14).height(14).color(AppConstants.COLOR_ACCENT)
                     Text(' AI 正在分析学生课表...')
                       .fontSize(12)
                       .fontColor('#999999')

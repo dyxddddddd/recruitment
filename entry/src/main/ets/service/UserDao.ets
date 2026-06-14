@@ -81,6 +81,8 @@ export class UserDao {
       id_card: user.idCard ?? '',
       business_license: user.businessLicense ?? '',
       vip_level: user.vipLevel ?? VipLevel.NORMAL,
+      vip_expire_time: user.vipExpireTime ?? 0,
+      vip_lifetime: user.vipLifetime ? 1 : 0,
       position_count: user.positionCount ?? 0,
       hr_real_name: user.hrRealName ?? '',
       password: user.password ?? '',
@@ -127,6 +129,8 @@ export class UserDao {
       id_card: user.idCard ?? '',
       business_license: user.businessLicense ?? '',
       vip_level: user.vipLevel ?? VipLevel.NORMAL,
+      vip_expire_time: user.vipExpireTime ?? 0,
+      vip_lifetime: user.vipLifetime ? 1 : 0,
       position_count: user.positionCount ?? 0,
       hr_real_name: user.hrRealName ?? '',
       password: user.password && user.password.length > 0 ? user.password : (existing?.password ?? ''),
@@ -353,11 +357,18 @@ export class UserDao {
     await store.update(valueBucket, predicates)
   }
 
-  async upgradeToVip(userId: string): Promise<void> {
+  async upgradeToVip(userId: string, extendMs: number, isLifetime: boolean): Promise<void> {
     const store = await this.helper.getStore()
+    const user = await this.getUserById(userId)
+    const now = Date.now()
+    // 如果已过期或是首次开通，从现在开始计算；否则在现有到期时间上叠加
+    const currentExpire = (user?.vipExpireTime && user.vipExpireTime > now) ? user.vipExpireTime : now
+    const newExpireTime = isLifetime ? 0 : currentExpire + extendMs
     const valueBucket: relationalStore.ValuesBucket = {
       vip_level: VipLevel.VIP,
-      update_time: Date.now()
+      vip_expire_time: newExpireTime,
+      vip_lifetime: isLifetime ? 1 : 0,
+      update_time: now
     }
     const predicates = new relationalStore.RdbPredicates(TABLE_USER)
     predicates.equalTo('user_id', userId)
@@ -562,6 +573,8 @@ export class UserDao {
       idCard: row.getString(row.getColumnIndex('id_card')),
       businessLicense: row.getString(row.getColumnIndex('business_license')),
       vipLevel: (vipLevelStr === VipLevel.VIP ? VipLevel.VIP : VipLevel.NORMAL) as VipLevel,
+      vipExpireTime: row.getLong(row.getColumnIndex('vip_expire_time')),
+      vipLifetime: row.getLong(row.getColumnIndex('vip_lifetime')) === 1,
       positionCount: row.getLong(row.getColumnIndex('position_count')),
       hrRealName: row.getString(row.getColumnIndex('hr_real_name')),
       password: row.getString(row.getColumnIndex('password')),

@@ -20,6 +20,8 @@ struct TalentDetailPage {
   @State isLoading: boolean = true
   @State loadError: boolean = false
   @State isSendingInterview: boolean = false
+  @State matchScore: number = 0
+  @State matchReason: string = ''
   private resumeDao: ResumeDao = new ResumeDao()
   private userDao: UserDao = new UserDao()
   private messageDao: MessageDao = new MessageDao()
@@ -30,6 +32,8 @@ struct TalentDetailPage {
     const params = router.getParams() as Record<string, Object>
     this.userId = (params['userId'] as string) || ''
     this.jobTitle = (params['jobTitle'] as string) || ''
+    this.matchScore = (params['matchScore'] as number) || 0
+    this.matchReason = (params['matchReason'] as string) || ''
     if (this.userId) {
       await this.loadData()
     } else {
@@ -217,14 +221,16 @@ struct TalentDetailPage {
             this.ScheduleCard()
             this.IntroCard()
             this.InterviewCard()
-            this.ActionBar()
           }
           .width('100%')
-          .padding({ left: 16, right: 16, bottom: 24 })
+          .padding({ left: 16, right: 16, bottom: 16 })
         }
         .layoutWeight(1)
         .backgroundColor('#F4F6FB')
         .scrollBar(BarState.Off)
+
+        // 底部固定操作栏
+        this.ActionBar()
       }
     }
     .width('100%')
@@ -236,7 +242,7 @@ struct TalentDetailPage {
   PageHeader() {
     Row() {
       Button() {
-        Image($r('sys.symbol.chevron_left'))
+        Image($r('app.media.ic_back'))
           .width(22)
           .height(22)
           .fillColor('#FFFFFF')
@@ -338,11 +344,25 @@ struct TalentDetailPage {
           this.HeaderBadge('课表空闲已同步', '#EDF9F1', '#279255')
         }
         if (this.resume && this.resume.isFromPDF) {
-          this.HeaderBadge('简历解析', '#F9F0FF', AppConstants.COLOR_AI_PURPLE)
+          this.HeaderBadge('简历解析', '#FFF3EE', AppConstants.COLOR_ACCENT)
         }
       }
       .width('100%')
       .margin({ top: 18 })
+
+      if (this.matchScore > 0 && this.matchReason) {
+        Row() {
+          Text(`${this.matchScore}分 · ${this.matchReason}`)
+            .fontSize(11)
+            .fontColor('#FF7B54')
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .backgroundColor('#FFF3EE')
+            .borderRadius(6)
+            .width('100%')
+        }
+        .width('100%')
+        .margin({ top: 16 })
+      }
 
       if (this.resume && this.resume.selfIntro.trim()) {
         Text(this.resume.selfIntro)
@@ -358,7 +378,7 @@ struct TalentDetailPage {
     .backgroundColor('#FFFFFF')
     .borderRadius(24)
     .shadow({ radius: 18, color: '#12000000', offsetY: 8 })
-    .margin({ top: -18 })
+    .margin({ top: 12 })
   }
 
   @Builder
@@ -687,7 +707,7 @@ struct TalentDetailPage {
         this.InterviewPoint('项目真实性核验', '#2E6FD8')
         this.InterviewPoint('表达逻辑与岗位适配', AppConstants.COLOR_ACCENT)
         this.InterviewPoint('时间安排与到岗灵活性', '#279255')
-        this.InterviewPoint('综合沟通风险提示', AppConstants.COLOR_AI_PURPLE)
+        this.InterviewPoint('综合沟通风险提示', AppConstants.COLOR_ACCENT)
       }
       .width('100%')
       .margin({ top: 14, bottom: 14 })
@@ -698,7 +718,7 @@ struct TalentDetailPage {
         .fontSize(15)
         .fontWeight(FontWeight.Bold)
         .fontColor('#FFFFFF')
-        .backgroundColor(AppConstants.COLOR_AI_PURPLE)
+        .backgroundColor(AppConstants.COLOR_ACCENT)
         .borderRadius(22)
         .enabled(!this.isSendingInterview)
         .onClick(() => this.handleSendAIInterview())
@@ -730,7 +750,7 @@ struct TalentDetailPage {
   ActionBar() {
     Row() {
       Button('暂不推进')
-        .width('30%')
+        .layoutWeight(1)
         .height(44)
         .fontSize(13)
         .backgroundColor('#FFFFFF')
@@ -739,25 +759,29 @@ struct TalentDetailPage {
         .border({ width: 1, color: '#E0E0E0' })
 
       Button('发消息')
-        .width('30%')
+        .layoutWeight(1)
         .height(44)
         .fontSize(13)
         .backgroundColor(AppConstants.COLOR_PRIMARY)
         .fontColor('#FFFFFF')
         .borderRadius(22)
+        .margin({ left: 10 })
         .onClick(() => this.handleStartChat())
 
       Button('发起面试')
-        .width('30%')
+        .layoutWeight(1)
         .height(44)
         .fontSize(13)
         .backgroundColor(AppConstants.COLOR_ACCENT)
         .fontColor('#FFFFFF')
         .borderRadius(22)
+        .margin({ left: 10 })
         .onClick(() => this.handleSendAIInterview())
     }
     .width('100%')
-    .justifyContent(FlexAlign.SpaceBetween)
-    .margin({ top: 4, bottom: 10 })
+    .padding({ left: 16, right: 16, top: 10, bottom: 12 })
+    .backgroundColor('#FFFFFF')
+    .border({ width: { top: 0.5 }, color: '#E8E8E8' })
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

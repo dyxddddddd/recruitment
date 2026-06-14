@@ -320,8 +320,7 @@ export struct AIInterviewVideoPage {
       // 顶部栏
       Row() {
         Button() {
-          Text((this.status === 'ready_to_record' || this.isRecording || this.isUploading) ? '← 返回列表' : '← 返回')
-            .fontSize(15).fontColor('#4A90D9')
+          Image($r('app.media.ic_back')).width(22).height(22).fillColor('#4A90D9')
         }
         .backgroundColor(Color.Transparent).padding(0)
         .onClick(() => {
