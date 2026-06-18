@@ -22,14 +22,36 @@ export struct RecruiterMessagesTab {
       this.sessions = []
       return
     }
-    await this.messageDao.ensureRecruiterDemoSession(AppState.currentUser.userId)
-    await this.messageDao.syncConversations(AppState.currentUser.userId)
-    this.sessions = await this.messageDao.getConversations(AppState.currentUser.userId)
+    // 过滤掉 demo/假会话
+    const filterSessions = (raw: ChatSession[]): ChatSession[] => {
+      return raw.filter((s: ChatSession) => {
+        const pid = s.peerId || ''
+        if (pid.indexOf('ai_assistant_') >= 0) return false
+        return true
+      })
+    }
+    // 先加载本地已有会话
+    const rawSessions = await this.messageDao.getConversations(AppState.currentUser.userId)
+    this.sessions = filterSessions(rawSessions)
     let total = 0
     for (let i = 0; i < this.sessions.length; i++) {
       total += this.sessions[i].unreadCount
     }
     AppStorage.setOrCreate<number>('total_unread', total)
+
+    // 后台尝试同步远程消息（不阻塞UI）
+    try {
+      await this.messageDao.syncConversations(AppState.currentUser.userId)
+      const syncedSessions = await this.messageDao.getConversations(AppState.currentUser.userId)
+      this.sessions = filterSessions(syncedSessions)
+      total = 0
+      for (let i = 0; i < this.sessions.length; i++) {
+        total += this.sessions[i].unreadCount
+      }
+      AppStorage.setOrCreate<number>('total_unread', total)
+    } catch (_e) {
+      // 远程同步失败，使用本地数据即可
+    }
   }
 
   openSession(session: ChatSession): void {
@@ -140,9 +162,9 @@ export struct RecruiterMessagesTab {
                     if (session.isAIAgent) {
                       Text('AI')
                         .fontSize(9)
-                        .fontColor(AppConstants.COLOR_AI_PURPLE)
+                        .fontColor(AppConstants.COLOR_ACCENT)
                         .padding({ left: 4, right: 4, top: 1, bottom: 1 })
-                        .backgroundColor('rgba(155,89,182,0.1)')
+                        .backgroundColor('rgba(255,107,53,0.1)')
                         .borderRadius(4)
                         .margin({ left: 6 })
                     }

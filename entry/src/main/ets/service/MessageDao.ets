@@ -189,11 +189,18 @@ export class MessageDao {
 
   // 确保会话存在
   async ensureConversation(conversationId: string, peerId: string, peerName: string): Promise<void> {
+    const store = await this.helper.getStore()
     const exists = await this.conversationExists(conversationId)
     if (exists) {
+      if (peerName) {
+        try {
+          await store.executeSql(
+            `UPDATE ${TABLE_CHAT_SESSION} SET peer_name = '${this.escapeSql(peerName)}', peer_id = '${peerId}' WHERE session_id = '${conversationId}' AND (peer_name = '' OR peer_name IS NULL)`
+          )
+        } catch (_e) { /* ignore */ }
+      }
       return
     }
-    const store = await this.helper.getStore()
     const bucket: relationalStore.ValuesBucket = {
       session_id: conversationId,
       peer_id: peerId,
@@ -367,6 +374,20 @@ export class MessageDao {
     } catch (e) {
       return false
     }
+  }
+
+  async insertSystemMessage(userId: string, title: string, content: string, type: string): Promise<void> {
+    const store = await this.helper.getStore()
+    const bucket: relationalStore.ValuesBucket = {
+      message_id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      user_id: userId,
+      title: title,
+      content: content,
+      type: type,
+      is_read: 0,
+      timestamp: Date.now()
+    }
+    await store.insert(TABLE_SYSTEM_MESSAGE, bucket)
   }
 
   async getSystemMessages(userId: string): Promise<SystemMessage[]> {

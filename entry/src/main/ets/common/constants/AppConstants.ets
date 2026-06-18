@@ -42,6 +42,26 @@ export class AppConstants {
   static readonly COLOR_YELLOW_HIGHLIGHT = '#FFFACD'
   static readonly COLOR_AI_PURPLE = '#9B59B6'
 
+  // 设计系统常量
+  static readonly SPACING_XS = 4
+  static readonly SPACING_SM = 8
+  static readonly SPACING_MD = 16
+  static readonly SPACING_LG = 24
+  static readonly SPACING_XL = 32
+
+  static readonly FONT_SIZE_XS = 10
+  static readonly FONT_SIZE_SM = 12
+  static readonly FONT_SIZE_MD = 14
+  static readonly FONT_SIZE_LG = 16
+  static readonly FONT_SIZE_XL = 18
+  static readonly FONT_SIZE_XXL = 20
+  static readonly FONT_SIZE_XXXL = 24
+
+  static readonly BORDER_RADIUS_SM = 6
+  static readonly BORDER_RADIUS_MD = 12
+  static readonly BORDER_RADIUS_LG = 20
+  static readonly BORDER_RADIUS_XL = 28
+
   static readonly ROUTE_INDEX = 'pages/Index'
   static readonly ROUTE_WELCOME = 'pages/WelcomePage'
   static readonly ROUTE_LOGIN = 'pages/login/LoginPage'
@@ -56,12 +76,17 @@ export class AppConstants {
   static readonly ROUTE_COMPANY_DETAIL = 'pages/job_seeker/CompanyDetailPage'
   static readonly ROUTE_TALENT_DETAIL = 'pages/recruiter/TalentDetailPage'
   static readonly ROUTE_RECRUITER_AUTH = 'pages/recruiter/AuthPage'
+  static readonly ROUTE_RECRUITER_JOB_MANAGE = 'pages/recruiter/JobManagePage'
   static readonly ROUTE_CHAT = 'pages/ChatPage'
   static readonly ROUTE_APPLICATION_TRACK = 'pages/job_seeker/ApplicationTrackPage'
   static readonly ROUTE_IDENTITY_GUIDE = 'pages/job_seeker/IdentityGuidePage'
   static readonly ROUTE_AI_ASSISTANT = 'pages/job_seeker/AIRecruiterAssistantPage'
   static readonly ROUTE_CONTRACT_REVIEW = 'pages/job_seeker/ContractReviewPage'
   static readonly ROUTE_AI_DIGITAL_TWIN = 'pages/job_seeker/AIDigitalTwinPage'
+  static readonly ROUTE_AI_INTERVIEW = 'pages/job_seeker/AIInterviewPage'
+  static readonly ROUTE_AI_INTERVIEW_VIDEO = 'pages/job_seeker/AIInterviewVideoPage'
+  static readonly ROUTE_AI_INTERVIEW_HUB = 'pages/job_seeker/AIInterviewHubPage'
+  static readonly ROUTE_RECRUITER_AI_ASSESSMENT = 'pages/recruiter/RecruiterAIAssessmentDashboardPage'
 }
 
 const KEY_CURRENT_USER = 'app_current_user'

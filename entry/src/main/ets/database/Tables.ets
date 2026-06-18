@@ -1,7 +1,7 @@
 // 数据库表结构定义
 
 export const DATABASE_NAME = 'UniCampus.db'
-export const DATABASE_VERSION = 6
+export const DATABASE_VERSION = 9
 
 // 用户表
 export const TABLE_USER = 'tb_user'
@@ -24,12 +24,27 @@ CREATE TABLE IF NOT EXISTS ${TABLE_USER} (
   is_guest INTEGER DEFAULT 0,
   avatar TEXT,
   company_name TEXT,
+  company_address TEXT,
+  company_industry TEXT,
+  company_scale TEXT,
+  legal_person TEXT,
+  contact_position TEXT,
+  company_email TEXT,
   id_card TEXT,
   business_license TEXT,
   vip_level TEXT DEFAULT 'normal',
+  vip_expire_time INTEGER DEFAULT 0,
+  vip_lifetime INTEGER DEFAULT 0,
   position_count INTEGER DEFAULT 0,
   hr_real_name TEXT,
   password TEXT,
+  auth_status INTEGER DEFAULT 0,
+  id_card_front_image TEXT,
+  id_card_back_image TEXT,
+  face_image TEXT,
+  auth_submit_time INTEGER,
+  auth_approve_time INTEGER,
+  auth_reject_reason TEXT,
   create_time INTEGER,
   update_time INTEGER,
   is_login INTEGER DEFAULT 0
@@ -307,6 +322,25 @@ CREATE TABLE IF NOT EXISTS ${TABLE_VERIFY_CODE} (
   created_at INTEGER NOT NULL
 )`
 
+// AI虚拟人面试记录表
+export const TABLE_AI_INTERVIEW = 'tb_ai_interview'
+export const CREATE_TABLE_AI_INTERVIEW = `
+CREATE TABLE IF NOT EXISTS ${TABLE_AI_INTERVIEW} (
+  interview_id TEXT PRIMARY KEY,
+  recruiter_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  job_id TEXT NOT NULL,
+  application_id TEXT NOT NULL,
+  status TEXT DEFAULT 'invited',
+  questions TEXT,
+  answers TEXT,
+  assessment_result TEXT,
+  total_score INTEGER DEFAULT 0,
+  invite_time INTEGER,
+  start_time INTEGER,
+  complete_time INTEGER
+)`
+
 export const ALL_CREATE_TABLES: string[] = [
   CREATE_TABLE_USER,
   CREATE_TABLE_RESUME,
@@ -326,5 +360,6 @@ export const ALL_CREATE_TABLES: string[] = [
   CREATE_TABLE_POST_LIKE,
   CREATE_TABLE_POST_FAVORITE,
   CREATE_TABLE_USER_SETTING,
-  CREATE_TABLE_VERIFY_CODE
+  CREATE_TABLE_VERIFY_CODE,
+  CREATE_TABLE_AI_INTERVIEW
 ]

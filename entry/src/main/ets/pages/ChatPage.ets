@@ -16,6 +16,7 @@ struct ChatPage {
   @State peerName: string = '联系人'
   @State connectionStatus: string = ''
   @State isConnected: boolean = false
+  @State showMorePanel: boolean = false
   private conversationId: string = ''
   private peerId: string = ''
   private messageDao: MessageDao = new MessageDao()
@@ -49,9 +50,11 @@ struct ChatPage {
 
   async initChat(): Promise<void> {
     if (!this.conversationId) {
-      const hrId = 'hr_demo_001'
-      this.conversationId = buildConversationId(this.userId, hrId)
+      // 学生端无指定会话时，创建AI助手对话（不关联真实用户）
+      const aiAssistantId = `ai_assistant_${this.userId}`
+      this.conversationId = buildConversationId(this.userId, aiAssistantId)
       this.isAIAgentSession = true
+      this.peerName = 'AI 招聘助手'
     }
 
     this.peerId = getPeerId(this.conversationId, this.userId)
@@ -302,21 +305,51 @@ struct ChatPage {
     return message.senderId === this.userId
   }
 
+  isRecruiter(): boolean {
+    return AppState.currentUser?.role === UserRole.RECRUITER
+  }
+
   isStudent(): boolean {
     return AppState.currentUser?.role === UserRole.JOB_SEEKER
+  }
+
+  // HR快捷回复模板
+  getQuickReplies(): string[] {
+    return [
+      '你好，方便安排面试时间吗？',
+      '请确认收到面试邀请',
+      '你的简历已通过初筛，请查看面试详情',
+      '请尽快完成AI虚拟面试',
+      '恭喜你通过面试，请查收Offer'
+    ]
+  }
+
+  sendQuickReply(text: string): void {
+    this.inputText = text
+    this.sendMessage()
+  }
+
+  goToInterviewSchedule(): void {
+    // 回到招聘者主页并切换到"我的"tab（面试排期在该tab中）
+    AppStorage.setOrCreate('recruiter_switch_tab', 4)
+    if (this.stompClient) {
+      this.stompClient.disconnect()
+      this.stompClient = null
+    }
+    router.back()
   }
 
   // 获取发送者气泡颜色
   getBubbleColor(isAI: boolean): string {
     if (isAI) {
-      return 'rgba(155,89,182,0.12)'
+      return 'rgba(255,107,53,0.12)'
     }
     return this.isStudent() ? AppConstants.COLOR_PRIMARY : AppConstants.COLOR_ACCENT
   }
 
   getBubbleTextColor(isAI: boolean): string {
     if (isAI) {
-      return AppConstants.COLOR_AI_PURPLE
+      return AppConstants.COLOR_ACCENT
     }
     return '#FFFFFF'
   }
@@ -333,6 +366,14 @@ struct ChatPage {
     return name.charAt(0)
   }
 
+  // 自己的头像文字
+  getSelfAvatarChar(): string {
+    const user = AppState.currentUser
+    if (!user) return '我'
+    const name = user.realName || user.hrRealName || user.companyName || '我'
+    return name.charAt(0)
+  }
+
   // 根据名字生成固定的头像颜色
   getAvatarColor(name: string): string {
     const colors: string[] = [
@@ -344,6 +385,24 @@ struct ChatPage {
       hash = name.charCodeAt(i) + ((hash << 5) - hash)
     }
     return colors[Math.abs(hash) % colors.length]
+  }
+
+  // 点击头像跳转到对方主页
+  navigateToPeerProfile(): void {
+    if (!this.peerId) return
+    if (this.isStudent()) {
+      // 学生端：点击HR头像 → 查看企业信息
+      router.pushUrl({
+        url: AppConstants.ROUTE_COMPANY_DETAIL,
+        params: { companyId: this.peerId }
+      })
+    } else {
+      // HR端：点击学生头像 → 查看人才详情
+      router.pushUrl({
+        url: AppConstants.ROUTE_TALENT_DETAIL,
+        params: { userId: this.peerId }
+      })
+    }
   }
 
   // 时间格式化
@@ -381,7 +440,7 @@ struct ChatPage {
       // 顶部导航栏
       Row() {
         Button() {
-          Image($r('sys.symbol.chevron_left'))
+          Image($r('app.media.ic_back'))
             .width(22)
             .height(22)
             .fillColor('#FFFFFF')
@@ -410,6 +469,7 @@ struct ChatPage {
             .fontColor('#FFFFFF')
         }
         .margin({ left: 10 })
+        .onClick(() => this.navigateToPeerProfile())
 
         Column() {
           Text(this.peerName)
@@ -433,12 +493,34 @@ struct ChatPage {
 
         Blank()
 
+        if (this.isRecruiter()) {
+          Button() {
+            Row() {
+              Image($r('sys.symbol.calendar'))
+                .width(12)
+                .height(12)
+                .fillColor('#FFFFFF')
+              Text('排期')
+                .fontSize(10)
+                .fontColor('#FFFFFF')
+                .margin({ left: 2 })
+            }
+          }
+          .height(26)
+          .fontSize(10)
+          .backgroundColor('rgba(255,255,255,0.22)')
+          .borderRadius(13)
+          .padding({ left: 8, right: 8 })
+          .margin({ right: 8 })
+          .onClick(() => this.goToInterviewSchedule())
+        }
+
         if (this.isAIAgentSession) {
           Text('AI')
             .fontSize(10)
             .fontColor('#FFFFFF')
             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-            .backgroundColor('rgba(155,89,182,0.35)')
+            .backgroundColor('rgba(255,107,53,0.35)')
             .borderRadius(10)
         }
       }
@@ -453,11 +535,11 @@ struct ChatPage {
         Row() {
           Text('AI 数字分身已开启，离线时自动代聊')
             .fontSize(10)
-            .fontColor(AppConstants.COLOR_AI_PURPLE)
+            .fontColor(AppConstants.COLOR_ACCENT)
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 5, bottom: 5 })
-        .backgroundColor('rgba(155,89,182,0.06)')
+        .backgroundColor('rgba(255,107,53,0.06)')
       }
 
       // 消息列表
@@ -479,8 +561,77 @@ struct ChatPage {
       .padding({ left: 12, right: 12, top: 8 })
       .backgroundColor('#EEF1F5')
 
+      // 更多功能面板（微信风格：键盘区高度，无遮罩）
+      if (this.showMorePanel) {
+        Column() {
+          // 快捷回复行（HR端）- 水平列表
+          if (this.isRecruiter()) {
+            List({ space: 8 }) {
+              ForEach(this.getQuickReplies(), (text: string) => {
+                ListItem() {
+                  Text(text)
+                    .fontSize(12)
+                    .fontColor(AppConstants.COLOR_ACCENT)
+                    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                    .backgroundColor('#FFFFFF')
+                    .borderRadius(4)
+                    .onClick(() => {
+                      this.showMorePanel = false
+                      this.sendQuickReply(text)
+                    })
+                }
+              })
+            }
+            .listDirection(Axis.Horizontal)
+            .width('100%')
+            .height(40)
+            .padding({ left: 16, right: 16 })
+            .backgroundColor('#F7F8FA')
+            .scrollBar(BarState.Off)
+          }
+
+          // 功能图标网格（2行 x 4列）
+          Grid() {
+            GridItem() { this.WxPanelItem('🖼️', '图片') }
+            GridItem() { this.WxPanelItem('📷', '拍摄') }
+            GridItem() { this.WxPanelItem('📁', '文件') }
+            GridItem() { this.WxPanelItem('📍', '位置') }
+            if (this.isRecruiter()) {
+              GridItem() { this.WxPanelItem('📅', '排期') }
+              GridItem() { this.WxPanelItem('📋', '简历') }
+            } else {
+              GridItem() { this.WxPanelItem('📋', '简历') }
+              GridItem() { this.WxPanelItem('🎤', '语音') }
+            }
+          }
+          .columnsTemplate('1fr 1fr 1fr 1fr')
+          .rowsTemplate('1fr 1fr')
+          .rowsGap(12)
+          .width('100%')
+          .height(200)
+          .padding({ left: 4, right: 4, top: 16, bottom: 8 })
+          .backgroundColor('#F7F8FA')
+        }
+        .width('100%')
+        .backgroundColor('#F7F8FA')
+        .border({ width: { top: 0.5 }, color: '#DDDDDD' })
+      }
+
       // 底部输入栏
       Row() {
+        // + 号按钮
+        Button() {
+          Image($r('sys.symbol.plus'))
+            .width(22)
+            .height(22)
+            .fillColor(this.isStudent() ? AppConstants.COLOR_PRIMARY : AppConstants.COLOR_ACCENT)
+        }
+        .width(36)
+        .height(36)
+        .backgroundColor('#F5F5F5')
+        .borderRadius(18)
+        .onClick(() => { this.showMorePanel = !this.showMorePanel })
+
         TextInput({ placeholder: '输入消息...', text: this.inputText })
           .layoutWeight(1)
           .height(40)
@@ -488,6 +639,7 @@ struct ChatPage {
           .backgroundColor('#F5F5F5')
           .borderRadius(20)
           .padding({ left: 16, right: 16 })
+          .margin({ left: 8 })
           .onChange((value: string) => { this.inputText = value })
           .onSubmit(() => this.sendMessage())
 
@@ -516,6 +668,39 @@ struct ChatPage {
   }
 
   @Builder
+  WxPanelItem(emoji: string, label: string) {
+    Column() {
+      Stack() {
+        Circle()
+          .width(48)
+          .height(48)
+          .fill('#FFFFFF')
+        Text(emoji)
+          .fontSize(24)
+      }
+      Text(label)
+        .fontSize(11)
+        .fontColor('#888888')
+        .margin({ top: 6 })
+    }
+    .alignItems(HorizontalAlign.Center)
+    .onClick(() => this.handlePanelAction(label))
+  }
+
+  handlePanelAction(label: string): void {
+    this.showMorePanel = false
+    if (label === '快捷回复') return
+    if (label === '面试排期') { this.goToInterviewSchedule(); return }
+    if (label === '查看简历') {
+      router.pushUrl({ url: AppConstants.ROUTE_TALENT_DETAIL, params: { userId: this.peerId } })
+      return
+    }
+    if (label === '我的简历') return
+    // 图片、拍摄、文件、位置等
+    AlertDialog.show({ title: '提示', message: `「${label}」功能即将上线` })
+  }
+
+  @Builder
   DateDivider(label: string) {
     Row() {
       Text(label)
@@ -540,9 +725,9 @@ struct ChatPage {
           if (message.isAIAgentReply) {
             Text('AI')
               .fontSize(8)
-              .fontColor(AppConstants.COLOR_AI_PURPLE)
+              .fontColor(AppConstants.COLOR_ACCENT)
               .padding({ left: 5, right: 5, top: 1, bottom: 1 })
-              .backgroundColor('rgba(155,89,182,0.12)')
+              .backgroundColor('rgba(255,107,53,0.12)')
               .borderRadius(4)
               .margin({ bottom: 3 })
           }
@@ -555,6 +740,17 @@ struct ChatPage {
             .constraintSize({ maxWidth: '72%' })
         }
         .alignItems(HorizontalAlign.End)
+        Stack() {
+          Circle()
+            .width(34)
+            .height(34)
+            .fill(this.getAvatarColor(this.getSelfAvatarChar()))
+          Text(this.getSelfAvatarChar())
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#FFFFFF')
+        }
+        .margin({ left: 8 })
       } else {
         // 对方发的消息 — 左侧
         // 头像
@@ -568,13 +764,23 @@ struct ChatPage {
             .fontWeight(FontWeight.Medium)
             .fontColor('#FFFFFF')
         }
+        .onClick(() => this.navigateToPeerProfile())
 
         Column() {
+          if (message.isAIAgentReply) {
+            Text('AI 数字分身')
+              .fontSize(8)
+              .fontColor(AppConstants.COLOR_ACCENT)
+              .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+              .backgroundColor('rgba(255,107,53,0.12)')
+              .borderRadius(4)
+              .margin({ bottom: 3 })
+          }
           Text(message.content)
             .fontSize(14)
-            .fontColor('#1A1A1A')
+            .fontColor(message.isAIAgentReply ? AppConstants.COLOR_ACCENT : '#1A1A1A')
             .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-            .backgroundColor('#FFFFFF')
+            .backgroundColor(message.isAIAgentReply ? 'rgba(255,107,53,0.06)' : '#FFFFFF')
             .borderRadius({ topLeft: 4, topRight: 18, bottomLeft: 18, bottomRight: 18 })
             .constraintSize({ maxWidth: '72%' })
         }
@@ -600,7 +806,7 @@ struct ChatPage {
     }
     .width('100%')
     .justifyContent(this.isOwnMessage(message) ? FlexAlign.End : FlexAlign.Start)
-    .padding(this.isOwnMessage(message) ? { right: 4 } : { left: 46 })
+    .padding(this.isOwnMessage(message) ? { right: 46 } : { left: 46 })
     .margin({ top: 2, bottom: 10 })
   }
 }

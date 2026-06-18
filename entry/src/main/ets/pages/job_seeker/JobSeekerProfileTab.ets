@@ -3,6 +3,8 @@ import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { ResumeInfo } from '../../model/ResumeModel'
 import { ResumeDao } from '../../service/ResumeDao'
 import { UserDao } from '../../service/UserDao'
+import { DatabaseHelper } from '../../database/DatabaseHelper'
+import { TABLE_APPLICATION, TABLE_POST_FAVORITE, TABLE_MICRO_TASK } from '../../database/Tables'
 
 export interface ProfileCompletenessResult {
   score: number
@@ -24,8 +26,18 @@ export struct JobSeekerProfileTab {
   @State missingFields: string[] = []
   @State completenessTip: string = ''
   @State profileResume: ResumeInfo | null = null
+  @State applicationCount: number = 0
+  @State interviewCount: number = 0
+  @State favoriteCount: number = 0
+  @State microTaskCount: number = 0
+  @State showSettings: boolean = false
+  @State oldPassword: string = ''
+  @State newPassword: string = ''
+  @State confirmPassword: string = ''
 
   aboutToAppear(): void {
+    this.loadCompleteness()
+    this.loadStats()
     void this.loadCompleteness()
   }
 
@@ -39,6 +51,53 @@ export struct JobSeekerProfileTab {
     this.profileCompleteness = result.score
     this.missingFields = result.missingFields
     this.completenessTip = result.tip
+  }
+
+  async loadStats(): Promise<void> {
+    const user = AppState.currentUser
+    if (!user) return
+    try {
+      const store = await DatabaseHelper.getInstance().getStore()
+      const userId = user.userId
+
+      // 投递数
+      const appRs = await store.querySql(
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_APPLICATION} WHERE user_id = '${userId}'`
+      )
+      if (appRs.goToFirstRow()) {
+        this.applicationCount = appRs.getLong(appRs.getColumnIndex('cnt'))
+      }
+      appRs.close()
+
+      // 面试数
+      const intRs = await store.querySql(
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_APPLICATION} WHERE user_id = '${userId}' AND status = 'interview'`
+      )
+      if (intRs.goToFirstRow()) {
+        this.interviewCount = intRs.getLong(intRs.getColumnIndex('cnt'))
+      }
+      intRs.close()
+
+      // 收藏数
+      const favRs = await store.querySql(
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_POST_FAVORITE} WHERE user_id = '${userId}'`
+      )
+      if (favRs.goToFirstRow()) {
+        this.favoriteCount = favRs.getLong(favRs.getColumnIndex('cnt'))
+      }
+      favRs.close()
+
+      // 微任务数
+      const taskRs = await store.querySql(
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_MICRO_TASK} WHERE accepted_by = '${userId}'`
+      )
+      if (taskRs.goToFirstRow()) {
+        this.microTaskCount = taskRs.getLong(taskRs.getColumnIndex('cnt'))
+      }
+      taskRs.close()
+    } catch (e) {
+      // fallback to zero
+    }
   }
 
   computeProfileCompleteness(resume: ResumeInfo | null): ProfileCompletenessResult {
@@ -107,8 +166,9 @@ export struct JobSeekerProfileTab {
   }
 
   build() {
-    Column() {
+    Stack() {
       Column() {
+        Column() {
         Row() {
           Column() {
             Text(this.profileResume?.school || AppState.currentUser?.school || '未设置学校')
@@ -194,6 +254,15 @@ export struct JobSeekerProfileTab {
         .borderRadius(12)
         .margin({ bottom: 12 })
         .border({ width: 1, color: '#FFF0E0' })
+
+        Row() {
+          this.StatItemBuilder('投递数', `${this.applicationCount}`)
+          this.StatItemBuilder('面试数', `${this.interviewCount}`)
+          this.StatItemBuilder('收藏', `${this.favoriteCount}`)
+          this.StatItemBuilder('微任务', `${this.microTaskCount}`)
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.SpaceAround)
       }
       .width('100%')
       .padding(16)
@@ -268,7 +337,9 @@ export struct JobSeekerProfileTab {
           }
         }
         .onClick(() => {
-          this.guardLogin('设置需要登录')
+          if (!this.guardLogin('设置需要登录')) {
+            this.showSettings = true
+          }
         })
 
         if (!AppState.isGuest) {
@@ -321,6 +392,151 @@ export struct JobSeekerProfileTab {
     }
     .width('100%')
     .height('100%')
+
+    // 设置弹窗
+    if (this.showSettings) {
+      Column() {
+        Column()
+          .width('100%')
+          .layoutWeight(1)
+          .backgroundColor('rgba(0,0,0,0.4)')
+          .onClick(() => {
+            this.showSettings = false
+            this.oldPassword = ''
+            this.newPassword = ''
+            this.confirmPassword = ''
+          })
+
+        Column() {
+          Text('账号设置')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#1A1A1A')
+            .margin({ bottom: 16 })
+            .alignSelf(ItemAlign.Start)
+
+          Text('修改密码')
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#333333')
+            .margin({ bottom: 12 })
+            .alignSelf(ItemAlign.Start)
+
+          TextInput({ text: this.oldPassword, placeholder: '请输入当前密码' })
+            .width('100%')
+            .height(44)
+            .fontSize(13)
+            .placeholderColor('#BBBBBB')
+            .type(InputType.Password)
+            .backgroundColor('#F8F8F8')
+            .borderRadius(8)
+            .padding({ left: 12 })
+            .margin({ bottom: 10 })
+            .onChange((v: string) => this.oldPassword = v)
+
+          TextInput({ text: this.newPassword, placeholder: '请输入新密码（至少6位）' })
+            .width('100%')
+            .height(44)
+            .fontSize(13)
+            .placeholderColor('#BBBBBB')
+            .type(InputType.Password)
+            .backgroundColor('#F8F8F8')
+            .borderRadius(8)
+            .padding({ left: 12 })
+            .margin({ bottom: 10 })
+            .onChange((v: string) => this.newPassword = v)
+
+          TextInput({ text: this.confirmPassword, placeholder: '请再次输入新密码' })
+            .width('100%')
+            .height(44)
+            .fontSize(13)
+            .placeholderColor('#BBBBBB')
+            .type(InputType.Password)
+            .backgroundColor('#F8F8F8')
+            .borderRadius(8)
+            .padding({ left: 12 })
+            .margin({ bottom: 20 })
+            .onChange((v: string) => this.confirmPassword = v)
+
+          Row() {
+            Button('取消')
+              .width('45%')
+              .height(42)
+              .fontSize(14)
+              .backgroundColor('#F0F0F0')
+              .fontColor('#666666')
+              .borderRadius(21)
+              .onClick(() => {
+                this.showSettings = false
+                this.oldPassword = ''
+                this.newPassword = ''
+                this.confirmPassword = ''
+              })
+
+            Button('确认修改')
+              .width('45%')
+              .height(42)
+              .fontSize(14)
+              .backgroundColor(AppConstants.COLOR_PRIMARY)
+              .fontColor('#FFFFFF')
+              .borderRadius(21)
+              .onClick(async () => {
+                const user = AppState.currentUser
+                if (!user) return
+                if (!this.oldPassword) {
+                  AlertDialog.show({ message: '请输入当前密码' })
+                  return
+                }
+                if (this.oldPassword !== user.password) {
+                  AlertDialog.show({ message: '当前密码不正确' })
+                  return
+                }
+                if (!this.newPassword || this.newPassword.length < 6) {
+                  AlertDialog.show({ message: '新密码至少6位' })
+                  return
+                }
+                if (this.newPassword !== this.confirmPassword) {
+                  AlertDialog.show({ message: '两次输入的新密码不一致' })
+                  return
+                }
+                await this.userDao.updatePassword(user.userId, this.newPassword)
+                user.password = this.newPassword
+                AppState.currentUser = user
+                AppState.syncToStorage()
+                this.showSettings = false
+                this.oldPassword = ''
+                this.newPassword = ''
+                this.confirmPassword = ''
+                AlertDialog.show({ message: '密码修改成功' })
+              })
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.SpaceBetween)
+        }
+        .width('100%')
+        .padding(24)
+        .backgroundColor('#FFFFFF')
+        .borderRadius({ topLeft: 16, topRight: 16 })
+      }
+      .width('100%')
+      .height('100%')
+      .position({ x: 0, y: 0 })
+    }
+    }
+  }
+
+  @Builder
+  StatItemBuilder(label: string, value: string) {
+    Column() {
+      Text(value)
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(AppConstants.COLOR_PRIMARY)
+      Text(label)
+        .fontSize(11)
+        .fontColor('#999999')
+        .margin({ top: 2 })
+    }
   }
 
   @Builder

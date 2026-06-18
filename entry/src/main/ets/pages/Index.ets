@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../common/constants/AppConstants'
 import { RoleCard } from '../common/components/RoleCard'
-import { StudentType, UserRole } from '../model/UserModel'
+import { StudentType, UserRole, AuthStatus } from '../model/UserModel'
 import { UserDao } from '../service/UserDao'
 
 @Entry
@@ -66,7 +66,12 @@ struct Index {
     if (role === UserRole.JOB_SEEKER) {
       router.replaceUrl({ url: AppConstants.ROUTE_JOB_SEEKER_MAIN })
     } else {
-      router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_MAIN })
+      const user = AppState.currentUser
+      if (user && user.authStatus === AuthStatus.APPROVED) {
+        router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_MAIN })
+      } else {
+        router.replaceUrl({ url: AppConstants.ROUTE_RECRUITER_AUTH })
+      }
     }
   }
 

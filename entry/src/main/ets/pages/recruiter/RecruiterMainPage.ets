@@ -16,6 +16,7 @@ struct RecruiterMainPage {
   @State currentTabIndex: number = 0
   @StorageLink('total_unread') totalUnread: number = 0
   @StorageLink('msg_refresh') @Watch('refreshTotalUnread') refreshTrigger: number = 0
+  @StorageLink('recruiter_switch_tab') @Watch('onTabSwitch') pendingTabSwitch: number = -1
   private tabsController: TabsController = new TabsController()
   private stompClient: StompClient | null = null
   private messageDao: MessageDao = new MessageDao()
@@ -37,6 +38,14 @@ struct RecruiterMainPage {
     if (AppState.currentUser) {
       const total = await this.messageDao.getUnreadTotal(AppState.currentUser.userId)
       AppStorage.setOrCreate<number>('total_unread', total)
+    }
+  }
+
+  onTabSwitch(): void {
+    if (this.pendingTabSwitch >= 0) {
+      this.currentTabIndex = this.pendingTabSwitch
+      this.tabsController.changeIndex(this.pendingTabSwitch)
+      AppStorage.setOrCreate<number>('recruiter_switch_tab', -1)
     }
   }
 
@@ -85,37 +94,45 @@ struct RecruiterMainPage {
   build() {
     Stack() {
       Column() {
-        // 顶部信息
+        // 顶部信息栏
         Row() {
           Text(AppConstants.APP_NAME)
-            .fontSize(18)
+            .fontSize(20)
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
+            .fontFamily('HarmonyOS Sans')
 
           Blank()
 
           Row() {
             Text(AppState.currentUser?.companyName || '企业用户')
-              .fontSize(11)
+              .fontSize(12)
               .fontColor('#FFFFFF')
-              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-              .backgroundColor('rgba(255,255,255,0.25)')
-              .borderRadius(10)
+              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+              .backgroundColor('rgba(255,255,255,0.18)')
+              .borderRadius(12)
+              .border({ width: 1, color: 'rgba(255,255,255,0.25)' })
           }
 
           if (AppState.currentUser?.vipLevel === 'vip') {
             Text('VIP')
-              .fontSize(10)
+              .fontSize(11)
               .fontColor('#FFD700')
               .fontWeight(FontWeight.Bold)
-              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-              .border({ width: 1, color: '#FFD700', radius: 8 })
+              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+              .backgroundColor('rgba(255,215,0,0.15)')
+              .border({ width: 1, color: '#FFD700', radius: 10 })
               .margin({ left: 6 })
           }
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 28, bottom: 12 })
-        .backgroundColor(AppConstants.COLOR_ACCENT)
+        .padding({ left: AppConstants.SPACING_MD, right: AppConstants.SPACING_MD, top: 60, bottom: AppConstants.SPACING_MD })
+        .linearGradient({
+          direction: GradientDirection.Bottom,
+          colors: [['#FF8C55', 0.0], ['#FF6B35', 0.6], ['#E5551F', 1.0]]
+        })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
+        .shadow({ radius: 10, color: '#30000000', offsetY: 3 })
 
         // Tab内容区
         Tabs({
@@ -138,12 +155,13 @@ struct RecruiterMainPage {
           TabContent() { RecruiterProfileTab() }
             .tabBar(this.TabBuilder('我的', 4))
         }
-        .barHeight(56)
+        .barHeight(60)
         .barBackgroundColor('#FFFFFF')
         .onChange((index: number) => {
           this.currentTabIndex = index
         })
         .layoutWeight(1)
+        .shadow({ radius: 4, color: '#10000000', offsetY: -2 })
       }
       .width('100%')
       .height('100%')
@@ -151,13 +169,13 @@ struct RecruiterMainPage {
       // 消息标签红泡泡 - 覆盖在导航栏上方
       if (this.totalUnread > 0) {
         Text(this.totalUnread > 99 ? '99+' : `${this.totalUnread}`)
-          .fontSize(10)
+          .fontSize(AppConstants.FONT_SIZE_XS)
           .fontWeight(FontWeight.Bold)
           .fontColor('#FFFFFF')
-          .backgroundColor('#FF4D4F')
-          .borderRadius(8)
-          .padding({ left: 4, right: 4, top: 1, bottom: 1 })
-          .position({ x: '72%', y: '94%' })
+          .backgroundColor(AppConstants.COLOR_DANGER)
+          .borderRadius(AppConstants.BORDER_RADIUS_MD)
+          .padding({ left: AppConstants.SPACING_XS, right: AppConstants.SPACING_XS, top: 1, bottom: 1 })
+          .position({ x: '72%', y: '93%' })
       }
     }
     .width('100%')
@@ -167,13 +185,23 @@ struct RecruiterMainPage {
   @Builder
   TabBuilder(title: string, index: number) {
     Column() {
-      Text(this.getTabIcon(index))
-        .fontSize(20)
-        .opacity(this.currentTabIndex === index ? 1.0 : 0.45)
+      Column() {
+        Text(this.getTabIcon(index))
+          .fontSize(AppConstants.FONT_SIZE_XL)
+          .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_ACCENT : AppConstants.COLOR_TEXT_HINT)
+      }
+      .width(36)
+      .height(36)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+      .backgroundColor(this.currentTabIndex === index ? 'rgba(255,107,53,0.1)' : 'transparent')
+      .borderRadius(18)
+      
       Text(title)
-        .fontSize(10)
-        .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_ACCENT : '#999999')
-        .margin({ top: 2 })
+        .fontSize(AppConstants.FONT_SIZE_XS)
+        .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_ACCENT : AppConstants.COLOR_TEXT_HINT)
+        .margin({ top: AppConstants.SPACING_XS })
+        .fontWeight(this.currentTabIndex === index ? FontWeight.Medium : FontWeight.Normal)
     }
     .width('100%')
     .height('100%')
@@ -193,15 +221,17 @@ struct RecruiterMainPage {
       }
       .width(36)
       .height(36)
-      .backgroundColor(AppConstants.COLOR_ACCENT)
-      .borderRadius(18)
+      .backgroundColor(this.currentTabIndex === 2 ? AppConstants.COLOR_ACCENT : 'rgba(255,107,53,0.9)')
+      .borderRadius(10)
       .justifyContent(FlexAlign.Center)
       .alignItems(HorizontalAlign.Center)
+      .shadow({ radius: 4, color: this.currentTabIndex === 2 ? '#40FF6B35' : '#20FF6B35', offsetY: 2 })
 
       Text('发布')
-        .fontSize(10)
-        .fontColor(this.currentTabIndex === 2 ? AppConstants.COLOR_ACCENT : '#999999')
-        .margin({ top: 2 })
+        .fontSize(AppConstants.FONT_SIZE_XS)
+        .fontColor(this.currentTabIndex === 2 ? AppConstants.COLOR_ACCENT : AppConstants.COLOR_TEXT_HINT)
+        .margin({ top: AppConstants.SPACING_SM })
+        .fontWeight(this.currentTabIndex === 2 ? FontWeight.Medium : FontWeight.Normal)
     }
     .width('100%')
     .height('100%')
@@ -210,7 +240,7 @@ struct RecruiterMainPage {
   }
 
   getTabIcon(index: number): string {
-    const icons = ['👥', '👑', '', '💬', '👤']
+    const icons: string[] = ['👥', '👑', '', '💬', '👤']
     return icons[index]
   }
 }
