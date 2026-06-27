@@ -52,6 +52,8 @@ export class MessageDao {
     }
     const store = await this.helper.getStore()
     let count = 0
+    let latestContent = ''
+    let latestTime = 0
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i]
       const existing = await this.messageExists(store, m.id)
@@ -63,6 +65,21 @@ export class MessageDao {
         )
         count++
       }
+      if (m.timestamp > latestTime) {
+        latestTime = m.timestamp
+        latestContent = m.content
+      }
+    }
+    // 更新会话最后消息
+    if (latestTime > 0) {
+      try {
+        await store.executeSql(
+          `UPDATE ${TABLE_CHAT_SESSION}
+           SET last_message = CASE WHEN last_message_time < ${latestTime} THEN '${this.escapeSql(latestContent)}' ELSE last_message END,
+               last_message_time = MAX(last_message_time, ${latestTime})
+           WHERE session_id = '${conversationId}'`
+        )
+      } catch (_e) { /* ignore */ }
     }
     return count
   }
@@ -126,7 +143,7 @@ export class MessageDao {
         peerId: peerId,
         peerName: peerName || peerId || '用户',
         peerAvatar: rs.getString(rs.getColumnIndex('peer_avatar')),
-        lastMessage: rs.getString(rs.getColumnIndex('last_message')),
+        lastMessage: rs.getString(rs.getColumnIndex('last_message')) || await this.getLatestMessageContent(sessionId),
         lastMessageTime: rs.getLong(rs.getColumnIndex('last_message_time')),
         unreadCount: unreadCount,
         isAIAgent: rs.getLong(rs.getColumnIndex('is_ai_agent')) === 1
@@ -470,6 +487,23 @@ export class MessageDao {
     const exists = rs.goToFirstRow()
     rs.close()
     return exists
+  }
+
+  // 当会话表中 last_message 为空时，从消息表取最新一条作为兜底
+  private async getLatestMessageContent(conversationId: string): Promise<string> {
+    try {
+      const store = await this.helper.getStore()
+      const rs = await store.querySql(
+        `SELECT content FROM ${TABLE_CHAT_MESSAGE} WHERE session_id = '${conversationId}' ORDER BY timestamp DESC LIMIT 1`
+      )
+      if (rs.goToFirstRow()) {
+        const content = rs.getString(rs.getColumnIndex('content'))
+        rs.close()
+        return content || ''
+      }
+      rs.close()
+    } catch (_e) { /* ignore */ }
+    return ''
   }
 
   private escapeSql(value: string): string {

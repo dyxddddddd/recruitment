@@ -2,6 +2,7 @@
 
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
+import { UserRole, AuthStatus } from '../../model/UserModel'
 import { RecruiterTalentsTab } from './RecruiterTalentsTab'
 import { RecruiterPublishTab } from './RecruiterPublishTab'
 import { RecruiterUpgradeTab } from './RecruiterUpgradeTab'
@@ -9,6 +10,8 @@ import { RecruiterMessagesTab } from './RecruiterMessagesTab'
 import { RecruiterProfileTab } from './RecruiterProfileTab'
 import { StompClient, StompMessage } from '../../service/StompClient'
 import { MessageDao } from '../../service/MessageDao'
+import { DatabaseHelper } from '../../database/DatabaseHelper'
+import { TABLE_JOB } from '../../database/Tables'
 
 @Entry
 @Component
@@ -17,11 +20,15 @@ struct RecruiterMainPage {
   @StorageLink('total_unread') totalUnread: number = 0
   @StorageLink('msg_refresh') @Watch('refreshTotalUnread') refreshTrigger: number = 0
   @StorageLink('recruiter_switch_tab') @Watch('onTabSwitch') pendingTabSwitch: number = -1
+  @State showAuthGate: boolean = false
+  @State showFirstJobPrompt: boolean = false
+  @State authGateChecking: boolean = true
   private tabsController: TabsController = new TabsController()
   private stompClient: StompClient | null = null
   private messageDao: MessageDao = new MessageDao()
 
   aboutToAppear(): void {
+    this.checkOnboarding()
     this.connectUnreadPush()
     this.refreshTotalUnread()
   }
@@ -32,6 +39,49 @@ struct RecruiterMainPage {
 
   onPageShow(): void {
     AppStorage.setOrCreate<number>('msg_refresh', Date.now())
+    this.checkOnboarding()
+  }
+
+  async checkOnboarding(): Promise<void> {
+    const user = AppState.currentUser
+    if (!user || user.role !== UserRole.RECRUITER) {
+      this.authGateChecking = false
+      return
+    }
+
+    const authStatus = user.authStatus ?? AuthStatus.UNAUTHENTICATED
+
+    // 未认证或被驳回 → 强制跳转认证页
+    if (authStatus === AuthStatus.UNAUTHENTICATED || authStatus === AuthStatus.REJECTED) {
+      this.showAuthGate = true
+      this.authGateChecking = false
+      return
+    }
+
+    // 审核中 → 允许浏览但提示
+    if (authStatus === AuthStatus.PENDING) {
+      this.showAuthGate = false
+      this.authGateChecking = false
+      return
+    }
+
+    // 已认证 → 检查是否有岗位
+    this.showAuthGate = false
+    try {
+      const store = await DatabaseHelper.getInstance().getStore()
+      const rs = await store.querySql(
+        `SELECT COUNT(*) AS cnt FROM ${TABLE_JOB} WHERE recruiter_id = '${user.userId}'`
+      )
+      let jobCount = 0
+      if (rs.goToFirstRow()) {
+        jobCount = rs.getLong(rs.getColumnIndex('cnt'))
+      }
+      rs.close()
+      this.showFirstJobPrompt = jobCount === 0
+    } catch (_e) {
+      // ignore
+    }
+    this.authGateChecking = false
   }
 
   async refreshTotalUnread(): Promise<void> {
@@ -155,7 +205,7 @@ struct RecruiterMainPage {
           TabContent() { RecruiterProfileTab() }
             .tabBar(this.TabBuilder('我的', 4))
         }
-        .barHeight(60)
+        .barHeight(56)
         .barBackgroundColor('#FFFFFF')
         .onChange((index: number) => {
           this.currentTabIndex = index
@@ -177,6 +227,87 @@ struct RecruiterMainPage {
           .padding({ left: AppConstants.SPACING_XS, right: AppConstants.SPACING_XS, top: 1, bottom: 1 })
           .position({ x: '72%', y: '93%' })
       }
+
+      // 企业认证门控 —— 未认证/被驳回时全屏遮罩
+      if (this.showAuthGate) {
+        Column() {
+          Column() {
+            Text('🔐').fontSize(48).margin({ bottom: 12 })
+            Text('请先完成企业认证')
+              .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+              .margin({ bottom: 8 })
+            Text(AppState.currentUser?.authStatus === AuthStatus.REJECTED
+              ? '您的企业认证申请被驳回，请重新提交认证资料。'
+              : '首次登录需要完成企业资质认证，\n认证通过后才能使用人才推荐与岗位发布功能。')
+              .fontSize(13).fontColor('#888888').lineHeight(20)
+              .textAlign(TextAlign.Center)
+              .width('90%')
+              .margin({ bottom: 24 })
+
+            Button('前往企业认证')
+              .width('70%').height(46).fontSize(15).fontWeight(FontWeight.Bold)
+              .fontColor('#FFFFFF').backgroundColor(AppConstants.COLOR_ACCENT)
+              .borderRadius(23)
+              .onClick(() => {
+                this.showAuthGate = false
+                router.pushUrl({ url: AppConstants.ROUTE_RECRUITER_AUTH })
+              })
+
+            Button('稍后再说')
+              .fontSize(13).fontColor('#BBBBBB')
+              .backgroundColor(Color.Transparent)
+              .margin({ top: 12 })
+              .onClick(() => {
+                this.showAuthGate = false
+              })
+          }
+          .width('85%').padding(28).backgroundColor('#FFFFFF').borderRadius(18)
+          .shadow({ radius: 24, color: 'rgba(0,0,0,0.18)' })
+        }
+        .width('100%').height('100%')
+        .backgroundColor('rgba(0,0,0,0.55)')
+        .justifyContent(FlexAlign.Center)
+      }
+
+      // 首次岗位引导弹窗
+      if (this.showFirstJobPrompt && !this.showAuthGate) {
+        Column() {
+          Column() {
+            Text('📋').fontSize(48).margin({ bottom: 12 })
+            Text('发布你的第一个岗位')
+              .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+              .margin({ bottom: 8 })
+            Text('认证通过后，建议立即发布一个招聘岗位，\n系统将基于岗位要求为你智能匹配推荐人才。')
+              .fontSize(13).fontColor('#888888').lineHeight(20)
+              .textAlign(TextAlign.Center)
+              .width('90%')
+              .margin({ bottom: 24 })
+
+            Button('立即发布岗位')
+              .width('70%').height(46).fontSize(15).fontWeight(FontWeight.Bold)
+              .fontColor('#FFFFFF').backgroundColor(AppConstants.COLOR_ACCENT)
+              .borderRadius(23)
+              .onClick(() => {
+                this.showFirstJobPrompt = false
+                this.currentTabIndex = 2
+                this.tabsController.changeIndex(2)
+              })
+
+            Button('先去逛逛')
+              .fontSize(13).fontColor('#BBBBBB')
+              .backgroundColor(Color.Transparent)
+              .margin({ top: 12 })
+              .onClick(() => {
+                this.showFirstJobPrompt = false
+              })
+          }
+          .width('85%').padding(28).backgroundColor('#FFFFFF').borderRadius(18)
+          .shadow({ radius: 24, color: 'rgba(0,0,0,0.18)' })
+        }
+        .width('100%').height('100%')
+        .backgroundColor('rgba(0,0,0,0.55)')
+        .justifyContent(FlexAlign.Center)
+      }
     }
     .width('100%')
     .height('100%')
@@ -185,23 +316,14 @@ struct RecruiterMainPage {
   @Builder
   TabBuilder(title: string, index: number) {
     Column() {
-      Column() {
-        Text(this.getTabIcon(index))
-          .fontSize(AppConstants.FONT_SIZE_XL)
-          .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_ACCENT : AppConstants.COLOR_TEXT_HINT)
-      }
-      .width(36)
-      .height(36)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-      .backgroundColor(this.currentTabIndex === index ? 'rgba(255,107,53,0.1)' : 'transparent')
-      .borderRadius(18)
-      
+      Text(this.getTabIcon(index))
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_ACCENT : '#999999')
       Text(title)
-        .fontSize(AppConstants.FONT_SIZE_XS)
-        .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_ACCENT : AppConstants.COLOR_TEXT_HINT)
-        .margin({ top: AppConstants.SPACING_XS })
-        .fontWeight(this.currentTabIndex === index ? FontWeight.Medium : FontWeight.Normal)
+        .fontSize(10)
+        .fontColor(this.currentTabIndex === index ? AppConstants.COLOR_ACCENT : '#999999')
+        .margin({ top: 2 })
     }
     .width('100%')
     .height('100%')
@@ -240,7 +362,7 @@ struct RecruiterMainPage {
   }
 
   getTabIcon(index: number): string {
-    const icons: string[] = ['👥', '👑', '', '💬', '👤']
+    const icons: string[] = ['才', '升', '', '信', '我']
     return icons[index]
   }
 }

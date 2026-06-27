@@ -46,6 +46,7 @@ export class DatabaseHelper {
     await this.migrateV6ToV7()
     await this.migrateV7ToV8()
     await this.migrateV8ToV9()
+    await this.migrateV9ToV10()
 
     await DemoDataInitializer.seed(this.store)
 
@@ -174,6 +175,28 @@ export class DatabaseHelper {
     try {
       await this.store.executeSql('ALTER TABLE tb_user ADD COLUMN vip_lifetime INTEGER DEFAULT 0')
     } catch (e) { /* column may already exist */ }
+  }
+
+  private async migrateV9ToV10(): Promise<void> {
+    if (!this.store) return
+    // 清除旧的演示聊天会话及消息
+    const demoSessionIds = [
+      'recruiter_demo_001:student_demo_001',
+      'recruiter_demo_001:student_demo_002'
+    ]
+    for (const sid of demoSessionIds) {
+      try {
+        await this.store.executeSql(`DELETE FROM tb_chat_message WHERE session_id = '${sid}'`)
+        await this.store.executeSql(`DELETE FROM tb_chat_session WHERE session_id = '${sid}'`)
+      } catch (e) { /* ignore */ }
+    }
+    // 修正旧种子数据中 student_demo_001 和 002 的名字
+    try {
+      await this.store.executeSql(`UPDATE tb_user SET real_name = '陈逸飞', school = '中南大学', major = '软件工程', education = '本科大三', expected_position = '前端开发实习', expected_salary = '4000-6000', current_city = '长沙' WHERE user_id = 'student_demo_001' AND real_name = '校园同学'`)
+    } catch (e) { /* ignore */ }
+    try {
+      await this.store.executeSql(`UPDATE tb_user SET real_name = '林雪莹', student_type = 'graduating', school = '湖南大学', major = '计算机科学与技术', education = '硕士', expected_position = 'Java后端开发', expected_salary = '12000-18000', current_city = '长沙' WHERE user_id = 'student_demo_002' AND (real_name IS NULL OR real_name = '' OR real_name = '学生用户')`)
+    } catch (e) { /* ignore */ }
   }
 
   async close(): Promise<void> {

@@ -1,4 +1,5 @@
 import { HttpService, ApiResult } from './HttpService'
+import { AppConstants } from '../common/constants/AppConstants'
 
 // ===== 请求体 =====
 
@@ -10,6 +11,7 @@ export interface CreateInterviewRequest {
 export interface SubmitAnswerRequest {
   sessionId: string
   questionId: number
+  questionText: string
   videoBase64: string
 }
 
@@ -18,6 +20,8 @@ export interface SubmitAnswerRequest {
 export interface InterviewQuestion {
   questionId: number
   questionText: string
+  sortOrder: number
+  ttsAudioUrl: string
   referenceAnswer?: string
 }
 
@@ -46,10 +50,15 @@ export interface AnswerWithFeedback {
   questionId: number
   questionText: string
   contentScore: number
+  expressionScore: number
+  voiceScore: number
+  overallScore: number
   feedback: string
 }
 
 export interface InterviewReport {
+  sessionId: number
+  position: string
   totalScore: number
   summary: string
   radar: RadarData
@@ -57,16 +66,16 @@ export interface InterviewReport {
 }
 
 export interface SessionHistoryItem {
-  sessionId: string
+  sessionId: number
   position: string
   totalScore: number
   completedAt: string
 }
 
-// ===== 内部 API 响应类型 =====
+// ===== 内部 API 响应包装 =====
 
 interface CreateInterviewData {
-  sessionId: string
+  sessionId: number
   questions: InterviewQuestion[]
 }
 
@@ -81,9 +90,16 @@ interface SessionsData {
 // ===== API 服务 =====
 
 export class InterviewApiService {
+  private static readonly BASE = '/interview'
+
+  static getTtsUrl(path: string): string {
+    if (!path || path.length === 0) return ''
+    return `${AppConstants.BACKEND_BASE_URL}${path}`
+  }
+
   static async createInterview(req: CreateInterviewRequest): Promise<CreateInterviewData> {
     const res = await HttpService.post<CreateInterviewData>(
-      '/interview/create', req
+      `${InterviewApiService.BASE}/create`, req
     )
     if (res.code === 200 && res.data) {
       return res.data
@@ -93,7 +109,7 @@ export class InterviewApiService {
 
   static async getQuestions(sessionId: string): Promise<InterviewQuestion[]> {
     const res = await HttpService.get<QuestionsData>(
-      `/interview/${sessionId}/questions`
+      `${InterviewApiService.BASE}/${sessionId}/questions`
     )
     if (res.code === 200 && res.data) {
       return res.data.questions
@@ -103,7 +119,7 @@ export class InterviewApiService {
 
   static async submitAnswer(req: SubmitAnswerRequest): Promise<SubmitAnswerResult> {
     const res = await HttpService.post<SubmitAnswerResult>(
-      '/interview/answer/submit', req
+      `${InterviewApiService.BASE}/answer/submit`, req
     )
     if (res.code === 200 && res.data) {
       return res.data
@@ -113,7 +129,7 @@ export class InterviewApiService {
 
   static async completeInterview(sessionId: string): Promise<InterviewReport> {
     const res = await HttpService.post<InterviewReport>(
-      `/interview/${sessionId}/complete`
+      `${InterviewApiService.BASE}/${sessionId}/complete`
     )
     if (res.code === 200 && res.data) {
       return res.data
@@ -123,7 +139,7 @@ export class InterviewApiService {
 
   static async getReport(sessionId: string): Promise<InterviewReport> {
     const res = await HttpService.get<InterviewReport>(
-      `/interview/report/${sessionId}`
+      `${InterviewApiService.BASE}/report/${sessionId}`
     )
     if (res.code === 200 && res.data) {
       return res.data
@@ -133,7 +149,7 @@ export class InterviewApiService {
 
   static async getUserSessions(userId: string): Promise<SessionHistoryItem[]> {
     const res = await HttpService.get<SessionsData>(
-      `/interview/sessions/${userId}`
+      `${InterviewApiService.BASE}/sessions/${userId}`
     )
     if (res.code === 200 && res.data) {
       return res.data.sessions || []

@@ -2,11 +2,17 @@
 
 import { router } from '@kit.ArkUI'
 import { promptAction } from '@kit.ArkUI'
+import { call } from '@kit.TelephonyKit'
+import { BusinessError } from '@kit.BasicServicesKit'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { UserProfile, UserRole, StudentType } from '../../model/UserModel'
+import { buildConversationId } from '../../model/MessageModel'
 import { UserDao } from '../../service/UserDao'
+import { MessageDao } from '../../service/MessageDao'
 import { DatabaseHelper } from '../../database/DatabaseHelper'
-import { TABLE_JOB, TABLE_RESUME, TABLE_EXPERIENCE } from '../../database/Tables'
+import { TABLE_JOB, TABLE_RESUME, TABLE_EXPERIENCE, TABLE_CHAT_SESSION } from '../../database/Tables'
+import { relationalStore } from '@kit.ArkData'
+import { RecruiterAIService, AITalentMatchInput } from '../../service/RecruiterAIService'
 
 // 已发岗位简要信息
 interface JobBrief {
@@ -14,6 +20,12 @@ interface JobBrief {
   skills: string[]
   education: string
   category: string
+  // 工时相关
+  taskStartTime: number
+  taskEndTime: number
+  requiredDayOfWeek: number
+  requiredStartHour: number
+  requiredEndHour: number
 }
 
 // 匹配结果
@@ -60,6 +72,12 @@ interface TalentCard {
   workCompany: string
   workRole: string
   description: string
+  phone: string
+}
+
+interface AIScoreEntry {
+  score: number
+  reason: string
 }
 
 @Component
@@ -73,12 +91,21 @@ export struct RecruiterTalentsTab {
   @State filterType: string = '不限'
   @State jobCount: number = 0
   @State categoryIndex: number = 0  // 0=全职/实习, 1=微任务
+  @State aiMatched: boolean = false
+  @StorageLink('talent_refresh') @Watch('onTalentRefresh') talentRefresh: number = 0
   private userDao: UserDao = new UserDao()
+  private messageDao: MessageDao = new MessageDao()
   private allStudents: UserProfile[] = []
   private postedJobs: JobBrief[] = []
+  private aiScoreCache: Record<number, Record<string, AIScoreEntry>> = {}
 
   async aboutToAppear(): Promise<void> {
-    await this.loadTalentsFromDB()
+    await this.loadTalentsFromDB(true)
+  }
+
+  async onTalentRefresh(): Promise<void> {
+    this.aiScoreCache = {}
+    await this.loadTalentsFromDB(true)
   }
 
   async loadPostedJobs(): Promise<void> {
@@ -87,7 +114,9 @@ export struct RecruiterTalentsTab {
     try {
       const store = await DatabaseHelper.getInstance().getStore()
       const rs = await store.querySql(
-        `SELECT title, skills, education, category FROM ${TABLE_JOB} WHERE recruiter_id = '${recruiterId}' AND status = 'published'`
+        `SELECT title, skills, education_required, category, task_start_time, task_end_time,
+                required_day_of_week, required_start_hour, required_end_hour
+         FROM ${TABLE_JOB} WHERE recruiter_id = '${recruiterId}' AND status = 'published'`
       )
       const jobs: JobBrief[] = []
       while (rs.goToNextRow()) {
@@ -100,20 +129,28 @@ export struct RecruiterTalentsTab {
         jobs.push({
           title: rs.getString(rs.getColumnIndex('title')) || '',
           skills: parsedSkills.length > 0 ? parsedSkills : (skillsStr ? skillsStr.split(',') : []),
-          education: rs.getString(rs.getColumnIndex('education')) || '',
-          category: rs.getString(rs.getColumnIndex('category')) || ''
+          education: rs.getString(rs.getColumnIndex('education_required')) || '',
+          category: rs.getString(rs.getColumnIndex('category')) || '',
+          taskStartTime: rs.getLong(rs.getColumnIndex('task_start_time')),
+          taskEndTime: rs.getLong(rs.getColumnIndex('task_end_time')),
+          requiredDayOfWeek: rs.getLong(rs.getColumnIndex('required_day_of_week')),
+          requiredStartHour: rs.getLong(rs.getColumnIndex('required_start_hour')),
+          requiredEndHour: rs.getLong(rs.getColumnIndex('required_end_hour'))
         })
       }
       rs.close()
       this.postedJobs = jobs
       this.jobCount = jobs.length
-    } catch (_e) {
+    } catch (e) {
+      console.error('loadPostedJobs failed: ' + JSON.stringify(e))
       this.postedJobs = []
     }
   }
 
-  async loadTalentsFromDB(): Promise<void> {
+  async loadTalentsFromDB(runAIMatch: boolean = false): Promise<void> {
     this.isLoading = true
+    this.aiMatched = false
+    const currentCategory = this.categoryIndex
     try {
       await this.loadPostedJobs()
       this.allStudents = await this.userDao.getStudents()
@@ -186,10 +223,35 @@ export struct RecruiterTalentsTab {
       }
 
       const mappedList: TalentCard[] = []
+      const aiCandidates: AITalentMatchInput[] = []
       for (let i = 0; i < this.allStudents.length; i++) {
         const user = this.allStudents[i]
-        const matchResult = this.computeJobMatch(user)
         const resume = resumeMap[user.userId]
+        const matchResult = this.computeJobMatch(user, resume?.skills || [], currentCategory)
+
+        // 构建AI匹配候选数据
+        let expText = ''
+        for (const rid of Object.keys(resumeIdToUserId)) {
+          if (resumeIdToUserId[rid] === user.userId) {
+            const exp = expMap[rid]
+            if (exp) {
+              expText = `${exp.role} @ ${exp.company} (${exp.startTime})`
+            }
+            break
+          }
+        }
+        aiCandidates.push({
+          userId: user.userId,
+          realName: resume?.realName || user.realName || '',
+          school: user.school || '',
+          major: user.major || '',
+          education: user.education || '',
+          expectedPosition: user.expectedPosition || '',
+          studentType: user.studentType === StudentType.CURRENT ? '在校' : '应届',
+          skills: resume?.skills || [],
+          selfIntro: resume?.selfIntro || '',
+          experience: expText
+        })
 
         // 计算年龄
         let age = 0
@@ -256,15 +318,70 @@ export struct RecruiterTalentsTab {
           skills: resume?.skills || [],
           workCompany,
           workRole,
-          description: resume?.selfIntro || ''
+          description: resume?.selfIntro || '',
+          phone: resume?.phone || user.phone || ''
         }
         mappedList.push(card)
       }
+      // AI智能匹配（首次加载跑AI并缓存，切换tab时复用缓存）
+      const cachedScores = this.aiScoreCache[currentCategory]
+      if (cachedScores && Object.keys(cachedScores).length > 0) {
+        for (const card of mappedList) {
+          const ai = cachedScores[card.userId]
+          if (ai && ai.score > 0) {
+            card.matchScore = ai.score
+            card.matchReason = ai.reason || card.matchReason
+          }
+        }
+        this.aiMatched = true
+      } else if (runAIMatch) {
+        const activeJobs = currentCategory === 0
+          ? this.postedJobs.filter((j: JobBrief) => j.category !== 'micro_task')
+          : this.postedJobs.filter((j: JobBrief) => j.category === 'micro_task')
+        this.aiMatched = false
+        if (activeJobs.length > 0 && aiCandidates.length > 0) {
+          try {
+            const job = activeJobs[0]
+            const weekdayNames: string[] = ['一', '二', '三', '四', '五', '六', '日']
+            let workHoursDesc = '时间灵活'
+            if (job.requiredStartHour >= 0) {
+              const dayLabel = job.requiredDayOfWeek > 0 ? '周' + weekdayNames[job.requiredDayOfWeek - 1] : ''
+              workHoursDesc = `时段: ${dayLabel} ${job.requiredStartHour}:00-${job.requiredEndHour}:00`
+            }
+            const aiResults = await RecruiterAIService.matchTalentsToJob(
+              job.title,
+              job.category === 'micro_task' ? '微任务/兼职' : '全职/实习',
+              job.skills,
+              job.education,
+              workHoursDesc,
+              aiCandidates
+            )
+            const scoreMap: Record<string, AIScoreEntry> = {}
+            for (const r of aiResults) {
+              const entry: AIScoreEntry = { score: r.score, reason: r.reason }
+              scoreMap[r.userId] = entry
+            }
+            this.aiScoreCache[currentCategory] = scoreMap
+            for (const card of mappedList) {
+              const ai = scoreMap[card.userId]
+              if (ai && ai.score > 0) {
+                card.matchScore = ai.score
+                card.matchReason = ai.reason || card.matchReason
+              }
+            }
+            this.aiMatched = true
+          } catch (_e) {
+            // AI失败，保留规则匹配分
+          }
+        }
+      }
+
       // 按匹配分从高到低排序
       mappedList.sort((a: TalentCard, b: TalentCard) => b.matchScore - a.matchScore)
       this.talents = mappedList
       this.filteredTalents = mappedList
     } catch (e) {
+      console.error('loadTalentsFromDB failed: ' + JSON.stringify(e))
       this.talents = []
       this.filteredTalents = []
     }
@@ -282,18 +399,37 @@ export struct RecruiterTalentsTab {
   }
 
   // 基于已发岗位计算匹配分
-  computeJobMatch(user: UserProfile): MatchResult {
-    const activeJobs = this.getActiveJobs()
+  computeJobMatch(user: UserProfile, resumeSkills: string[], categoryIndex: number): MatchResult {
+    const activeJobs = categoryIndex === 0
+      ? this.postedJobs.filter((j: JobBrief) => j.category !== 'micro_task')
+      : this.postedJobs.filter((j: JobBrief) => j.category === 'micro_task')
     if (activeJobs.length === 0) {
-      // 无匹配岗位，基于简历完整度给基础分
-      let score = 60
+      // 无匹配岗位时基于简历完整度差异化评分
+      let score = 20
       const reasons: string[] = []
-      if (user.school) { score += 5; reasons.push(user.school) }
-      if (user.major) { score += 5; reasons.push(user.major) }
+      if (user.school) { score += 8; reasons.push(user.school) }
+      if (user.major) { score += 6; reasons.push(user.major) }
       if (user.expectedPosition) { score += 5; reasons.push(user.expectedPosition) }
+      // 简历技能数量影响分数
+      if (resumeSkills.length >= 5) {
+        score += 6
+      } else if (resumeSkills.length >= 3) {
+        score += 3
+      } else if (resumeSkills.length > 0) {
+        score += 1
+      }
+      // 学历层次影响
+      if (user.education) {
+        const edu = user.education.toLowerCase()
+        if (edu.includes('硕士') || edu.includes('博士')) {
+          score += 4
+        } else if (edu.includes('本科')) {
+          score += 2
+        }
+      }
       return {
-        score: Math.min(score, 85),
-        reason: reasons.length > 0 ? `匹配简历特征: ${reasons.join('、')}` : '基础推荐'
+        score: Math.min(score, 55),
+        reason: reasons.length > 0 ? `简历: ${reasons.join('、')}` : '暂无岗位，请先发布'
       }
     }
 
@@ -301,66 +437,85 @@ export struct RecruiterTalentsTab {
     let bestReason = ''
 
     for (const job of activeJobs) {
-      let score = 40
+      let score = 15
       const hits: string[] = []
 
-      // 学历匹配
+      // 简历技能 vs 岗位技能匹配（核心维度，最高+30）
+      if (job.skills.length > 0 && resumeSkills.length > 0) {
+        let skillHits = 0
+        const matchedSkills: string[] = []
+        for (const jobSkill of job.skills) {
+          const js = jobSkill.trim().toLowerCase()
+          for (const resumeSkill of resumeSkills) {
+            const rs = resumeSkill.trim().toLowerCase()
+            if (rs.includes(js) || js.includes(rs) || this.hasChineseWordOverlap(js, rs)) {
+              skillHits++
+              matchedSkills.push(jobSkill)
+              break
+            }
+          }
+        }
+        if (skillHits > 0) {
+          const bonus = Math.min(skillHits * 12, 30)
+          score += bonus
+          hits.push(`技能${matchedSkills.slice(0, 3).join('、')}匹配`)
+        }
+      }
+
+      // 学历匹配（+10）
       if (job.education && user.education) {
         const jobEdu = job.education.toLowerCase()
         const userEdu = user.education.toLowerCase()
         if (jobEdu.includes(userEdu) || userEdu.includes(jobEdu)) {
-          score += 15
+          score += 10
           hits.push(`学历${user.education}匹配`)
-        } else {
-          score += 3
         }
       }
 
-      // 专业与岗位技能匹配
+      // 专业与岗位技能匹配（辅助维度，最高+10）
       if (job.skills.length > 0 && user.major) {
         const majorLower = user.major.toLowerCase()
-        let skillHits = 0
+        let majorSkillHits = 0
         for (const skill of job.skills) {
           const s = skill.trim().toLowerCase()
-          if (s && (majorLower.includes(s) || s.includes(majorLower) || majorLower.indexOf(s) >= 0)) {
-            skillHits++
+          if (s && (majorLower.includes(s) || s.includes(majorLower) ||
+            majorLower.indexOf(s) >= 0 || this.hasChineseWordOverlap(majorLower, s))) {
+            majorSkillHits++
           }
         }
-        if (skillHits > 0) {
-          const bonus = Math.min(skillHits * 10, 25)
-          score += bonus
-          hits.push(`技能匹配${job.title}`)
-        } else {
-          score += 2
+        if (majorSkillHits > 0) {
+          score += Math.min(majorSkillHits * 5, 10)
         }
       }
 
-      // 意向岗位与岗位名称匹配
+      // 意向岗位与岗位名称匹配（+12 精确 / +6 模糊）
       if (user.expectedPosition && job.title) {
         const posLower = user.expectedPosition.toLowerCase()
         const titleLower = job.title.toLowerCase()
         if (posLower.includes(titleLower) || titleLower.includes(posLower)) {
-          score += 15
+          score += 12
           hits.push(`意向吻合${job.title}`)
         } else {
-          // 模糊匹配
           const posWords = posLower.split(/[\s,，、/]+/)
           const titleWords = titleLower.split(/[\s,，、/]+/)
           let wordHit = false
           for (const pw of posWords) {
             for (const tw of titleWords) {
-              if (pw && tw && (pw.includes(tw) || tw.includes(pw))) {
+              if (pw && tw && (pw.includes(tw) || tw.includes(pw) ||
+                this.hasChineseWordOverlap(pw, tw))) {
                 wordHit = true
                 break
               }
             }
             if (wordHit) break
           }
-          score += wordHit ? 8 : 2
+          if (wordHit) {
+            score += 6
+          }
         }
       }
 
-      // 类型匹配
+      // 类型匹配（+8 最佳 / +3 兜底）
       if (job.category && user.studentType) {
         if (job.category === 'micro_task' && user.studentType === StudentType.CURRENT) {
           score += 8
@@ -368,6 +523,42 @@ export struct RecruiterTalentsTab {
         } else if (job.category !== 'micro_task' && user.studentType === StudentType.GRADUATING) {
           score += 8
           hits.push('全职适配应届生')
+        } else if (job.category === 'micro_task') {
+          score += 3
+        }
+      }
+
+      // 工时匹配（微任务专属，最高+8）
+      if (job.category === 'micro_task' && job.requiredStartHour >= 0) {
+        const startH = job.requiredStartHour
+        const endH = job.requiredEndHour >= 0 ? job.requiredEndHour : startH + 2
+        const dayOfWeek = job.requiredDayOfWeek
+        const isEvening = startH >= 17 && endH <= 23
+        const isWeekend = dayOfWeek === 6 || dayOfWeek === 7
+        const isDaytime = startH >= 8 && endH <= 18
+
+        if (user.studentType === StudentType.CURRENT) {
+          // 在校生：晚间和周末更友好
+          if (isEvening || isWeekend) {
+            score += 8
+            hits.push(isWeekend ? '周末时段匹配' : '晚间时段匹配')
+          } else if (isDaytime) {
+            score += 4
+            hits.push('课余时段可协调')
+          } else {
+            score += 2
+          }
+        } else if (user.studentType === StudentType.GRADUATING) {
+          // 应届生：白天全职时段更友好
+          if (isDaytime) {
+            score += 6
+            hits.push('全职时段匹配')
+          } else if (isEvening) {
+            score += 3
+            hits.push('晚间时段可参与')
+          } else {
+            score += 1
+          }
         } else {
           score += 2
         }
@@ -375,12 +566,12 @@ export struct RecruiterTalentsTab {
 
       // 学校加分
       if (user.school) {
-        score += 4
+        score += 3
       }
 
       if (score > bestScore) {
         bestScore = score
-        bestReason = hits.length > 0 ? hits.join('、') : `匹配${job.title}`
+        bestReason = hits.length > 0 ? hits.join('、') : ''
       }
     }
 
@@ -388,6 +579,19 @@ export struct RecruiterTalentsTab {
       score: Math.min(bestScore, 99),
       reason: bestReason || '综合推荐'
     }
+  }
+
+  // 中文双字重叠检测：如"数据清洗"与"数据可视化"共享"数据"
+  hasChineseWordOverlap(a: string, b: string): boolean {
+    if (a.length < 2 || b.length < 2) return false
+    const bigrams = new Set<string>()
+    for (let i = 0; i < a.length - 1; i++) {
+      bigrams.add(a.substring(i, i + 2))
+    }
+    for (let i = 0; i < b.length - 1; i++) {
+      if (bigrams.has(b.substring(i, i + 2))) return true
+    }
+    return false
   }
 
   applyFilters(): void {
@@ -456,7 +660,7 @@ export struct RecruiterTalentsTab {
 
   handleCategoryChange(index: number): void {
     this.categoryIndex = index
-    this.loadTalentsFromDB()
+    this.loadTalentsFromDB(false)
   }
 
   getAvatarEmoji(name: string): string {
@@ -494,6 +698,29 @@ export struct RecruiterTalentsTab {
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 4 })
 
+      // 岗位状态提示
+      if (this.jobCount === 0 && !this.isLoading) {
+        Row() {
+          Text('📌 暂未发布岗位，请先发布岗位以获得智能人才匹配')
+            .fontSize(12)
+            .fontColor('#FF8C55')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+        .backgroundColor('#FFF8F5')
+      } else if (this.jobCount > 0 && this.getActiveJobs().length === 0 && !this.isLoading) {
+        Row() {
+          Text(this.categoryIndex === 0
+            ? '💡 当前分类无岗位，点击"微任务/短期兼职"查看微任务匹配'
+            : '💡 当前分类无岗位，点击"全职/转正实习"查看全职匹配')
+            .fontSize(12)
+            .fontColor('#4A90D9')
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+        .backgroundColor('#F0F7FF')
+      }
+
       // 搜索栏
       Row() {
         Row() {
@@ -525,7 +752,7 @@ export struct RecruiterTalentsTab {
         .fontColor(this.showAdvancedSearch ? '#FFFFFF' : AppConstants.COLOR_ACCENT)
         .borderRadius(1)
 
-        
+
         .margin({ left: AppConstants.SPACING_SM })
         .border({ width: 1, color: 'rgba(255,107,53,0.25)' })
         .onClick(() => {
@@ -584,7 +811,7 @@ export struct RecruiterTalentsTab {
         .padding({ left: 16, right: 16, bottom: 8 })
       }
 
-      Divider().height(1).color('#F0F0F0')
+      Row().width('100%').height(1).backgroundColor('#F0F0F0')
 
       // 人才列表
       if (this.isLoading) {
@@ -718,9 +945,9 @@ export struct RecruiterTalentsTab {
             .fontSize(22)
             .fontWeight(FontWeight.Bold)
             .fontColor(talent.matchScore >= 80 ? '#FF6B35' : (talent.matchScore >= 60 ? '#FAAD14' : '#999999'))
-          Text('匹配分')
+          Text(this.aiMatched ? 'AI匹配分' : '匹配分')
             .fontSize(9)
-            .fontColor('#999999')
+            .fontColor(this.aiMatched ? '#9B59B6' : '#999999')
             .margin({ top: -2 })
         }
         .alignItems(HorizontalAlign.End)
@@ -733,11 +960,11 @@ export struct RecruiterTalentsTab {
       // ========== 第2行：关键信息标签行 ==========
       Row() {
         this.InfoChip(`${talent.age}岁`)
-        Divider().vertical(true).height(10).color('#E0E0E0').margin({ left: 6, right: 6 })
+        Row().width(1).height(10).backgroundColor('#E0E0E0').margin({ left: 6, right: 6 })
         this.InfoChip(`${talent.experienceYears}年经验`)
-        Divider().vertical(true).height(10).color('#E0E0E0').margin({ left: 6, right: 6 })
+        Row().width(1).height(10).backgroundColor('#E0E0E0').margin({ left: 6, right: 6 })
         this.InfoChip(talent.salary)
-        Divider().vertical(true).height(10).color('#E0E0E0').margin({ left: 6, right: 6 })
+        Row().width(1).height(10).backgroundColor('#E0E0E0').margin({ left: 6, right: 6 })
         this.InfoChip(talent.city)
       }
       .width('100%')
@@ -824,7 +1051,26 @@ export struct RecruiterTalentsTab {
           .border({ width: 1, color: '#FF6B35', style: BorderStyle.Solid })
           .borderRadius(14)
           .onClick(() => {
-            promptAction.showToast({ message: '已复制电话到剪贴板', duration: 1500 })
+            const phone = talent.phone || ''
+            AlertDialog.show({
+              title: talent.realName,
+              message: `电话：${phone || '暂无电话信息'}`,
+              primaryButton: {
+                value: '呼叫',
+                action: () => {
+                  if (!phone) {
+                    promptAction.showToast({ message: '暂无电话信息', duration: 1500 })
+                    return
+                  }
+                  call.makeCall(phone, (err: BusinessError) => {
+                    if (err) {
+                      promptAction.showToast({ message: '拨号失败', duration: 1500 })
+                    }
+                  })
+                }
+              },
+              secondaryButton: { value: '关闭', action: () => {} }
+            })
           })
 
         Button() { Text('打招呼').fontSize(11).fontColor('#FFFFFF') }
@@ -833,8 +1079,52 @@ export struct RecruiterTalentsTab {
           .backgroundColor('#FF6B35')
           .borderRadius(14)
           .margin({ left: 8 })
-          .onClick(() => {
-            promptAction.showToast({ message: `已向 ${talent.realName} 打招呼`, duration: 1500 })
+          .onClick(async () => {
+            const recruiterId = AppState.currentUser?.userId
+            if (!recruiterId) {
+              promptAction.showToast({ message: '请先登录', duration: 1500 })
+              return
+            }
+            const companyName = AppState.currentUser?.companyName || '我们公司'
+            const skillText = talent.skills.length > 0 ? talent.skills.slice(0, 3).join('、') : talent.expectedPosition
+            const greeting = `你好 ${talent.realName}，我是${companyName}的招聘负责人。看了你的简历，对你的${talent.school} ${talent.major}背景很感兴趣，特别是你在${skillText}方面的经验。我们目前在招${talent.expectedPosition}方向的人才，觉得你可能会合适。方便进一步交流一下吗？`
+
+            try {
+              const store = await DatabaseHelper.getInstance().getStore()
+              const now = Date.now()
+              const conversationId = buildConversationId(recruiterId, talent.userId)
+              await this.messageDao.ensureConversation(conversationId, talent.userId, talent.realName)
+
+              // 插入招呼消息
+              const msgId = `msg_${now}_${Math.random().toString(36).substring(2, 8)}`
+              const msgBucket: relationalStore.ValuesBucket = {
+                message_id: msgId,
+                session_id: conversationId,
+                sender_id: recruiterId,
+                receiver_id: talent.userId,
+                content: greeting,
+                timestamp: now,
+                is_ai_agent_reply: 0,
+                message_type: 'text',
+                is_read: 0
+              }
+              await store.insert('tb_chat_message', msgBucket)
+
+              // 更新会话最后消息
+              const sessionBucket: relationalStore.ValuesBucket = {
+                last_message: greeting,
+                last_message_time: now
+              }
+              const predicates = new relationalStore.RdbPredicates(TABLE_CHAT_SESSION)
+              predicates.equalTo('session_id', conversationId)
+              await store.update(sessionBucket, predicates)
+
+              // 通知消息页面刷新
+              AppStorage.setOrCreate<number>('msg_refresh', Date.now())
+              promptAction.showToast({ message: `已向 ${talent.realName} 发送打招呼消息`, duration: 2000 })
+            } catch (_e) {
+              promptAction.showToast({ message: '发送失败，请重试', duration: 1500 })
+            }
           })
       }
       .width('100%')
@@ -844,8 +1134,8 @@ export struct RecruiterTalentsTab {
     .padding({ left: 14, right: 14, top: 12, bottom: 12 })
     .backgroundColor('#FFFFFF')
     .borderRadius(12)
-    .border({ width: 1, color: '#E8E8E8' })
-    .shadow({ radius: 6, color: '#18000000', offsetY: 2 })
+    .border({ width: 1, color: '#D9D9D9' })
+    .shadow({ radius: 8, color: '#25000000', offsetY: 3 })
     .onClick(() => this.handleTalentClick(talent))
   }
 
