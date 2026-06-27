@@ -1,17 +1,24 @@
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
-import { StudentType } from '../../model/UserModel'
 import { JobCategory, JobPosition } from '../../model/JobModel'
-import { CourseSchedule, FreeTimeSlot } from '../../model/ResumeModel'
+import { CourseSchedule, FreeTimeSlot, ResumeInfo } from '../../model/ResumeModel'
+import { StudentType } from '../../model/UserModel'
 import { JobDao } from '../../service/JobDao'
+import { calculateMatchScore } from '../../service/MatchScoreService'
 import { ResumeDao } from '../../service/ResumeDao'
 
 type StudentTaskFilterMode = 'all' | 'matched'
+type JobSortMode = 'default' | 'match'
 
 interface JobTimeRequirement {
   dayOfWeek: number
   startMinutes: number
   endMinutes: number
+}
+
+interface JobMatchScoreItem {
+  jobId: string
+  score: number
 }
 
 @Component
@@ -21,8 +28,11 @@ export struct JobSeekerJobsTab {
   @State isSearchVisible: boolean = false
   @State searchKeyword: string = ''
   @State schedule: CourseSchedule | null = null
+  @State resume: ResumeInfo | null = null
   @State isCurrentStudent: boolean = AppState.currentUser?.studentType !== StudentType.GRADUATING
   @State studentFilterMode: StudentTaskFilterMode = 'all'
+  @State sortMode: JobSortMode = 'default'
+  @State jobMatchScores: JobMatchScoreItem[] = []
 
   private jobDao: JobDao = new JobDao()
   private resumeDao: ResumeDao = new ResumeDao()
@@ -30,19 +40,23 @@ export struct JobSeekerJobsTab {
   aboutToAppear(): void {
     this.isCurrentStudent = AppState.currentUser?.studentType !== StudentType.GRADUATING
     this.categoryIndex = this.isCurrentStudent ? 0 : this.categoryIndex
-    this.loadSchedule()
-    this.loadJobs()
+    void this.loadProfileContext()
   }
 
-  async loadSchedule(): Promise<void> {
+  async loadProfileContext(): Promise<void> {
     if (AppState.currentUser) {
       this.schedule = await this.resumeDao.getScheduleByUserId(AppState.currentUser.userId)
+      this.resume = await this.resumeDao.getResumeByUserId(AppState.currentUser.userId)
+    } else {
+      this.schedule = null
+      this.resume = null
     }
+    await this.loadJobs()
   }
 
   async loadJobs(): Promise<void> {
     const category = this.categoryIndex === 1 ? JobCategory.FULLTIME_INTERN : JobCategory.MICRO_TASK
-    const sourceJobs = this.searchKeyword.trim()
+    const sourceJobs = this.searchKeyword.trim().length > 0
       ? await this.jobDao.searchJobs(this.searchKeyword.trim())
       : await this.jobDao.queryJobs(category)
 
@@ -53,6 +67,9 @@ export struct JobSeekerJobsTab {
     if (category === JobCategory.MICRO_TASK && this.studentFilterMode === 'matched') {
       nextJobs = nextJobs.filter((job: JobPosition) => this.isTimeMatch(job))
     }
+
+    this.jobMatchScores = this.buildMatchScores(nextJobs)
+    nextJobs = this.sortJobs(nextJobs)
     this.jobList = nextJobs
   }
 
@@ -137,12 +154,80 @@ export struct JobSeekerJobsTab {
     return this.inferMatchFromText(job, slots)
   }
 
+  private buildMatchScores(jobs: JobPosition[]): JobMatchScoreItem[] {
+    const items: JobMatchScoreItem[] = []
+    for (let i = 0; i < jobs.length; i++) {
+      items.push({
+        jobId: jobs[i].jobId,
+        score: this.computeJobMatchScore(jobs[i])
+      })
+    }
+    return items
+  }
+
+  private computeJobMatchScore(job: JobPosition): number {
+    let score = 50
+    if (this.resume) {
+      score = calculateMatchScore(this.resume, job).score
+    }
+    if (job.category === JobCategory.MICRO_TASK) {
+      if (this.hasAnyAvailability()) {
+        score += this.isTimeMatch(job) ? 12 : -10
+      }
+    }
+    if (score > 100) {
+      return 100
+    }
+    if (score < 0) {
+      return 0
+    }
+    return score
+  }
+
+  private getJobMatchScore(jobId: string): number {
+    for (let i = 0; i < this.jobMatchScores.length; i++) {
+      if (this.jobMatchScores[i].jobId === jobId) {
+        return this.jobMatchScores[i].score
+      }
+    }
+    return 0
+  }
+
+  private sortJobs(jobs: JobPosition[]): JobPosition[] {
+    const copied = jobs.slice()
+    if (this.sortMode === 'match') {
+      copied.sort((a: JobPosition, b: JobPosition) => {
+        const scoreDiff = this.getJobMatchScore(b.jobId) - this.getJobMatchScore(a.jobId)
+        if (scoreDiff !== 0) {
+          return scoreDiff
+        }
+        if (a.category === JobCategory.MICRO_TASK && b.category === JobCategory.MICRO_TASK) {
+          const timeMatchDiff = (this.isTimeMatch(b) ? 1 : 0) - (this.isTimeMatch(a) ? 1 : 0)
+          if (timeMatchDiff !== 0) {
+            return timeMatchDiff
+          }
+        }
+        return b.publishTime - a.publishTime
+      })
+      return copied
+    }
+    copied.sort((a: JobPosition, b: JobPosition) => b.publishTime - a.publishTime)
+    return copied
+  }
+
   private async setStudentFilterMode(mode: StudentTaskFilterMode): Promise<void> {
     this.studentFilterMode = mode
     if (mode === 'matched') {
-      await this.loadSchedule()
+      if (AppState.currentUser) {
+        this.schedule = await this.resumeDao.getScheduleByUserId(AppState.currentUser.userId)
+      }
     }
-    this.loadJobs()
+    await this.loadJobs()
+  }
+
+  private async setSortMode(mode: JobSortMode): Promise<void> {
+    this.sortMode = mode
+    await this.loadJobs()
   }
 
   private formatDateTime(timestamp?: number): string {
@@ -165,6 +250,15 @@ export struct JobSeekerJobsTab {
     return `${this.formatDateTime(job.taskStartTime)} - ${this.formatDateTime(job.taskEndTime)}`
   }
 
+  private emptyTipText(): string {
+    if (this.categoryIndex === 0 && this.studentFilterMode === 'matched') {
+      return this.hasAnyAvailability()
+        ? '暂时没有和你空闲时间匹配的微任务'
+        : '你还没有填写弹性工时，当前默认视为没有空闲时间'
+    }
+    return '暂时没有合适职位'
+  }
+
   build() {
     Column() {
       if (this.isSearchVisible) {
@@ -177,7 +271,7 @@ export struct JobSeekerJobsTab {
             .borderRadius(18)
             .padding({ left: 16 })
             .onChange((value: string) => { this.searchKeyword = value })
-            .onSubmit(() => this.loadJobs())
+            .onSubmit(() => { void this.loadJobs() })
           Button('搜索')
             .fontSize(13)
             .height(32)
@@ -186,7 +280,7 @@ export struct JobSeekerJobsTab {
             .borderRadius(16)
             .padding({ left: 14, right: 14 })
             .margin({ left: 8 })
-            .onClick(() => this.loadJobs())
+            .onClick(() => { void this.loadJobs() })
           Button('取消')
             .fontSize(13)
             .height(32)
@@ -198,7 +292,7 @@ export struct JobSeekerJobsTab {
             .onClick(() => {
               this.isSearchVisible = false
               this.searchKeyword = ''
-              this.loadJobs()
+              void this.loadJobs()
             })
         }
         .width('100%')
@@ -211,7 +305,7 @@ export struct JobSeekerJobsTab {
                 .fontSize(16)
                 .fontWeight(FontWeight.Bold)
                 .fontColor('#1A1A1A')
-              Text('默认展示全部微任务；若未填写弹性工时，"仅看时间匹配" 会视为当前没有可匹配空闲时间。')
+              Text('可按空闲时间筛选，也可以按当前简历匹配度优先排序。')
                 .fontSize(11)
                 .fontColor('#667085')
                 .margin({ top: 4 })
@@ -235,7 +329,7 @@ export struct JobSeekerJobsTab {
               .fontColor(this.studentFilterMode === 'all' ? '#FFFFFF' : '#666666')
               .borderRadius(17)
               .padding({ left: 16, right: 16 })
-              .onClick(() => this.setStudentFilterMode('all'))
+              .onClick(() => { void this.setStudentFilterMode('all') })
             Button('仅看时间匹配')
               .fontSize(12)
               .height(34)
@@ -244,55 +338,107 @@ export struct JobSeekerJobsTab {
               .borderRadius(17)
               .padding({ left: 16, right: 16 })
               .margin({ left: 8 })
-              .onClick(() => this.setStudentFilterMode('matched'))
+              .onClick(() => { void this.setStudentFilterMode('matched') })
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, bottom: 8 })
+
+          Row() {
+            Text('排序')
+              .fontSize(12)
+              .fontColor('#98A2B3')
+            Button('默认')
+              .fontSize(11)
+              .height(28)
+              .backgroundColor(this.sortMode === 'default' ? '#E8F1FF' : '#F5F5F5')
+              .fontColor(this.sortMode === 'default' ? AppConstants.COLOR_PRIMARY : '#666666')
+              .borderRadius(14)
+              .padding({ left: 12, right: 12 })
+              .margin({ left: 8 })
+              .onClick(() => { void this.setSortMode('default') })
+            Button('匹配度优先')
+              .fontSize(11)
+              .height(28)
+              .backgroundColor(this.sortMode === 'match' ? '#EAF7EE' : '#F5F5F5')
+              .fontColor(this.sortMode === 'match' ? '#2E8B57' : '#666666')
+              .borderRadius(14)
+              .padding({ left: 12, right: 12 })
+              .margin({ left: 8 })
+              .onClick(() => { void this.setSortMode('match') })
           }
           .width('100%')
           .padding({ left: 16, right: 16, bottom: 8 })
         }
       } else {
-        Row() {
-          Button('微任务 / 短期兼职')
-            .fontSize(13)
-            .height(34)
-            .backgroundColor(this.categoryIndex === 0 ? AppConstants.COLOR_PRIMARY : '#F5F5F5')
-            .fontColor(this.categoryIndex === 0 ? '#FFFFFF' : '#666666')
-            .borderRadius(17)
-            .padding({ left: 16, right: 16 })
-            .onClick(() => {
-              this.categoryIndex = 0
-              this.loadJobs()
-            })
+        Column() {
+          Row() {
+            Button('微任务 / 短期兼职')
+              .fontSize(13)
+              .height(34)
+              .backgroundColor(this.categoryIndex === 0 ? AppConstants.COLOR_PRIMARY : '#F5F5F5')
+              .fontColor(this.categoryIndex === 0 ? '#FFFFFF' : '#666666')
+              .borderRadius(17)
+              .padding({ left: 16, right: 16 })
+              .onClick(() => {
+                this.categoryIndex = 0
+                void this.loadJobs()
+              })
 
-          Button('全职 / 转正实习')
-            .fontSize(13)
-            .height(34)
-            .backgroundColor(this.categoryIndex === 1 ? AppConstants.COLOR_PRIMARY : '#F5F5F5')
-            .fontColor(this.categoryIndex === 1 ? '#FFFFFF' : '#666666')
-            .borderRadius(17)
-            .padding({ left: 16, right: 16 })
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.categoryIndex = 1
-              this.loadJobs()
-            })
+            Button('全职 / 转正实习')
+              .fontSize(13)
+              .height(34)
+              .backgroundColor(this.categoryIndex === 1 ? AppConstants.COLOR_PRIMARY : '#F5F5F5')
+              .fontColor(this.categoryIndex === 1 ? '#FFFFFF' : '#666666')
+              .borderRadius(17)
+              .padding({ left: 16, right: 16 })
+              .margin({ left: 8 })
+              .onClick(() => {
+                this.categoryIndex = 1
+                void this.loadJobs()
+              })
 
-          Blank()
+            Blank()
 
-          Image($r('sys.symbol.magnifyingglass'))
-            .width(20)
-            .height(20)
-            .fillColor('#666666')
-            .onClick(() => { this.isSearchVisible = true })
+            Image($r('sys.symbol.magnifyingglass'))
+              .width(20)
+              .height(20)
+              .fillColor('#666666')
+              .onClick(() => { this.isSearchVisible = true })
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+
+          Row() {
+            Text('排序')
+              .fontSize(12)
+              .fontColor('#98A2B3')
+            Button('默认')
+              .fontSize(11)
+              .height(28)
+              .backgroundColor(this.sortMode === 'default' ? '#E8F1FF' : '#F5F5F5')
+              .fontColor(this.sortMode === 'default' ? AppConstants.COLOR_PRIMARY : '#666666')
+              .borderRadius(14)
+              .padding({ left: 12, right: 12 })
+              .margin({ left: 8 })
+              .onClick(() => { void this.setSortMode('default') })
+            Button('匹配度优先')
+              .fontSize(11)
+              .height(28)
+              .backgroundColor(this.sortMode === 'match' ? '#EAF7EE' : '#F5F5F5')
+              .fontColor(this.sortMode === 'match' ? '#2E8B57' : '#666666')
+              .borderRadius(14)
+              .padding({ left: 12, right: 12 })
+              .margin({ left: 8 })
+              .onClick(() => { void this.setSortMode('match') })
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, bottom: 8 })
         }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 12, bottom: 8 })
       }
 
       if (this.jobList.length === 0) {
         Column() {
-          Text(this.categoryIndex === 0 && this.studentFilterMode === 'matched'
-            ? (this.hasAnyAvailability() ? '暂时没有和你空闲时间匹配的微任务' : '你还没有填写弹性工时，当前默认视为没有空闲时间')
-            : '暂时没有合适职位')
+          Text(this.emptyTipText())
             .fontSize(14)
             .fontColor('#999999')
         }
@@ -333,7 +479,7 @@ export struct JobSeekerJobsTab {
             .fontSize(13)
             .fontColor('#666666')
             .margin({ top: 4 })
-          if (this.categoryIndex === 0 && this.taskTimeText(job)) {
+          if (this.categoryIndex === 0 && this.taskTimeText(job).length > 0) {
             Text(this.taskTimeText(job))
               .fontSize(11)
               .fontColor('#667085')
@@ -354,6 +500,12 @@ export struct JobSeekerJobsTab {
             .fontSize(11)
             .fontColor('#999999')
             .margin({ top: 4 })
+          if (this.sortMode === 'match') {
+            Text(`匹配度 ${this.getJobMatchScore(job.jobId)}%`)
+              .fontSize(11)
+              .fontColor('#2E8B57')
+              .margin({ top: 6 })
+          }
         }
         .alignItems(HorizontalAlign.End)
       }

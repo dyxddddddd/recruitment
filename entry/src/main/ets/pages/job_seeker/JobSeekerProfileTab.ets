@@ -38,6 +38,7 @@ export struct JobSeekerProfileTab {
   aboutToAppear(): void {
     this.loadCompleteness()
     this.loadStats()
+    void this.loadCompleteness()
   }
 
   async loadCompleteness(): Promise<void> {
@@ -120,7 +121,7 @@ export struct JobSeekerProfileTab {
     }
 
     const score = Math.round((filledCount / fields.length) * 100)
-    let tip: string = '基础信息还未填完，快去完善简历吧'
+    let tip = '基础信息还未填完，快去完善简历吧'
     if (score >= 80) {
       tip = '简历完整度很高，继续保持'
     } else if (score >= 50) {
@@ -159,7 +160,7 @@ export struct JobSeekerProfileTab {
   }
 
   openFlexCalendar(): void {
-    if (!this.guardLogin('设置弹性工作日历需要登录')) {
+    if (!this.guardLogin('设置弹性工时日历需要登录')) {
       router.pushUrl({ url: AppConstants.ROUTE_FLEX_WORK_CALENDAR })
     }
   }
@@ -234,7 +235,7 @@ export struct JobSeekerProfileTab {
           if (this.missingFields.length > 0) {
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(this.missingFields, (field: string) => {
-                Text(`缺少：${field}`)
+                Text(`缺少: ${field}`)
                   .fontSize(11)
                   .fontColor('#FF6B35')
                   .padding({ left: 8, right: 8, top: 3, bottom: 3 })
@@ -288,7 +289,7 @@ export struct JobSeekerProfileTab {
 
         ListItem() {
           Column() {
-            this.MenuItemBuilder('📬', '投递记录', '查看所有投递状态')
+            this.MenuItemBuilder('📤', '投递记录', '查看所有投递状态')
           }
         }
         .onClick(() => {
@@ -343,36 +344,44 @@ export struct JobSeekerProfileTab {
 
         if (!AppState.isGuest) {
           ListItem() {
-            Button('退出登录')
-              .width('60%')
-              .height(40)
-              .fontSize(14)
-              .backgroundColor('#FF4D4F')
-              .fontColor('#FFFFFF')
-              .borderRadius(20)
-              .margin({ top: 16 })
-              .onClick(async () => {
-                await this.userDao.logoutAll()
-                AppState.currentUser = null
-                AppState.isLoggedIn = false
-                AppState.isGuest = true
-                AppState.syncToStorage()
-                router.replaceUrl({ url: AppConstants.ROUTE_INDEX })
-              })
+            Row() {
+              Button('退出登录')
+                .width('60%')
+                .height(40)
+                .fontSize(14)
+                .backgroundColor('#FF4D4F')
+                .fontColor('#FFFFFF')
+                .borderRadius(20)
+                .margin({ top: 16 })
+                .onClick(async () => {
+                  await this.userDao.logoutAll()
+                  AppState.currentUser = null
+                  AppState.isLoggedIn = false
+                  AppState.isGuest = true
+                  AppState.syncToStorage()
+                  router.replaceUrl({ url: AppConstants.ROUTE_INDEX })
+                })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
           }
         }
 
         if (AppState.isGuest) {
           ListItem() {
-            Button('登录解锁全部功能')
-              .width('60%')
-              .height(40)
-              .fontSize(14)
-              .backgroundColor(AppConstants.COLOR_PRIMARY)
-              .fontColor('#FFFFFF')
-              .borderRadius(20)
-              .margin({ top: 16 })
-              .onClick(() => router.pushUrl({ url: AppConstants.ROUTE_LOGIN }))
+            Row() {
+              Button('登录解锁全部功能')
+                .width('60%')
+                .height(40)
+                .fontSize(14)
+                .backgroundColor(AppConstants.COLOR_PRIMARY)
+                .fontColor('#FFFFFF')
+                .borderRadius(20)
+                .margin({ top: 16 })
+                .onClick(() => router.pushUrl({ url: AppConstants.ROUTE_LOGIN }))
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
           }
         }
       }
