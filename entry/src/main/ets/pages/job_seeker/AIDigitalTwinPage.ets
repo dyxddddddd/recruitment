@@ -62,7 +62,7 @@ export struct AIDigitalTwinPage {
         Blank()
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 28, bottom: 12 })
+      .padding({ left: 16, right: 16, top: 56, bottom: 12 })
 
       Scroll() {
         Column() {

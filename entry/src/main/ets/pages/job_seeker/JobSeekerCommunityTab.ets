@@ -507,7 +507,6 @@ export struct JobSeekerCommunityTab {
       Row() {
         this.HeaderChip('同校可见')
         this.HeaderChip('支持点赞收藏')
-        this.HeaderChip(this.currentUser?.school || '待完善学校')
       }
       .width('100%')
       .margin({ top: 16 })

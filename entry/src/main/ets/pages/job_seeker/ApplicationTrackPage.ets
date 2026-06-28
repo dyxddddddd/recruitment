@@ -141,7 +141,7 @@ export struct ApplicationTrackPage {
           .onClick(() => this.loadApplications())
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .padding({ left: 16, right: 16, top: 52, bottom: 12 })
 
         Divider().height(1).color('#F0F0F0')
 

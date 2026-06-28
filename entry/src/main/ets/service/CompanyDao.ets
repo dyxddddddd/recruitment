@@ -56,6 +56,66 @@ const COMMUNITY_SEED_POSTS: CommunityPost[] = [
     commentCount: 0,
     createTime: Date.now() - 8 * 60 * 60 * 1000,
     authorName: '校园同学'
+  },
+  {
+    postId: 'post_runtime_seed_004',
+    userId: 'student_demo_001',
+    school: '华南理工科技大学',
+    title: '有没有一起准备测开 / 测试开发暑期实习的同学？',
+    content: '我这周刚开始系统刷测开方向的题，想找同校同学一起整理接口测试、SQL、Linux 和自动化测试常问点，也可以互相看简历。',
+    category: 'companion',
+    isAnonymous: true,
+    tags: ['测开', '暑期实习', '搭子'],
+    likeCount: 7,
+    favoriteCount: 3,
+    commentCount: 0,
+    createTime: Date.now() - 90 * 60 * 1000,
+    authorName: '校园同学'
+  },
+  {
+    postId: 'post_runtime_seed_005',
+    userId: 'student_demo_001',
+    school: '华南理工科技大学',
+    title: '小红书前端一面体验：更看重项目细节，不太爱问死八股',
+    content: '今天面完感觉整体氛围还可以，面试官主要追问项目里你自己真正负责的模块、复杂交互怎么做、接口异常怎么处理，也问了性能优化和工程化。',
+    category: 'interview',
+    isAnonymous: true,
+    tags: ['前端', '面经', '暑期实习'],
+    likeCount: 12,
+    favoriteCount: 8,
+    commentCount: 0,
+    createTime: Date.now() - 4 * 60 * 60 * 1000,
+    authorName: '校园同学'
+  },
+  {
+    postId: 'post_runtime_seed_006',
+    userId: 'student_demo_001',
+    school: '华南理工科技大学',
+    title: '想问下现在大家找日常实习都主要投哪些平台？',
+    content: 'BOSS、实习僧和公司官网我都有在看，但感觉信息有点散。想听听同校同学最近都在哪些渠道投得更多，尤其是产品和运营方向。',
+    category: 'discussion',
+    isAnonymous: false,
+    tags: ['日常实习', '求职渠道', '交流'],
+    likeCount: 5,
+    favoriteCount: 2,
+    commentCount: 0,
+    createTime: Date.now() - 7 * 60 * 60 * 1000,
+    authorName: '校园同学'
+  },
+  {
+    postId: 'post_runtime_seed_007',
+    userId: 'student_demo_001',
+    school: '华南理工科技大学',
+    title: '腾讯后端笔试复盘：并发、网络和两道算法题是重点',
+    content: '刚做完一场后端笔试，主观感受是数据库题不算多，反而并发基础、HTTP / TCP、缓存一致性思路和算法实现更关键，时间还是挺紧的。',
+    category: 'interview',
+    isAnonymous: true,
+    tags: ['腾讯', '后端', '笔试'],
+    likeCount: 10,
+    favoriteCount: 6,
+    commentCount: 0,
+    createTime: Date.now() - 11 * 60 * 60 * 1000,
+    authorName: '校园同学'
   }
 ]
 

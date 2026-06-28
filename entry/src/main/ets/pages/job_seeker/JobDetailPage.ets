@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { ApplicationStatus, JobApplication, JobPosition } from '../../model/JobModel'
+import { buildConversationId } from '../../model/MessageModel'
 import { StudentType, UserProfile } from '../../model/UserModel'
 import { rewriteExperienceList, ExperienceInput } from '../../service/AITranslateService'
 import { JobDao } from '../../service/JobDao'
@@ -100,8 +101,8 @@ struct JobDetailPage {
     await this.jobDao.insertApplication(app)
     const studentName = AppState.currentUser.realName || AppState.currentUser.phone || '候选人'
     const recruiterName = this.getRecruiterDisplayName(recruiter)
-    const sessionId = await this.messageDao.ensureApplicationConversation(
-      recruiter.userId, AppState.currentUser.userId, studentName, recruiterName, this.job.title)
+    const conversationId = buildConversationId(recruiter.userId, AppState.currentUser.userId)
+    await this.ensureJobConversation(recruiter, recruiterName, studentName, conversationId)
     this.hasApplied = true
 
     AlertDialog.show({
@@ -110,14 +111,7 @@ struct JobDetailPage {
       primaryButton: {
         value: '去沟通',
         action: () => {
-          router.pushUrl({
-            url: AppConstants.ROUTE_CHAT,
-            params: {
-              conversationId: sessionId,
-              peerName: recruiterName,
-              isAIAgent: false
-            }
-          })
+          this.navigateToConversation(conversationId, recruiterName)
         }
       },
       secondaryButton: { value: '稍后', action: () => {} }
@@ -138,11 +132,39 @@ struct JobDetailPage {
     }
     const studentName = AppState.currentUser.realName || AppState.currentUser.phone || '候选人'
     const recruiterName = this.getRecruiterDisplayName(recruiter)
-    const conversationId = await this.messageDao.ensureApplicationConversation(
-      recruiter.userId, AppState.currentUser.userId, studentName, recruiterName, this.job.title)
+    const conversationId = buildConversationId(recruiter.userId, AppState.currentUser.userId)
+    await this.ensureJobConversation(recruiter, recruiterName, studentName, conversationId)
+    this.navigateToConversation(conversationId, recruiterName)
+  }
+
+  private async ensureJobConversation(
+    recruiter: UserProfile,
+    recruiterName: string,
+    studentName: string,
+    conversationId: string
+  ): Promise<void> {
+    if (!this.job || !AppState.currentUser) {
+      return
+    }
+
+    try {
+      await this.messageDao.ensureApplicationConversation(
+        recruiter.userId,
+        AppState.currentUser.userId,
+        studentName,
+        recruiterName,
+        this.job.title
+      )
+    } catch (_error) {
+      await this.messageDao.ensureConversation(conversationId, recruiter.userId, recruiterName)
+    }
+  }
+
+  private navigateToConversation(conversationId: string, recruiterName: string): void {
     router.pushUrl({
       url: AppConstants.ROUTE_CHAT,
       params: {
+        sessionId: conversationId,
         conversationId: conversationId,
         peerName: recruiterName,
         isAIAgent: false
@@ -401,8 +423,11 @@ struct JobDetailPage {
           Text(getMatchSummary(this.matchResult!))
             .fontSize(11)
             .fontColor('#999999')
+            .maxLines(2)
+            .textAlign(TextAlign.End)
         }
         .width('100%')
+        .alignItems(VerticalAlign.Top)
         .margin({ bottom: 12 })
 
         Row() {
@@ -435,23 +460,20 @@ struct JobDetailPage {
           .height(80)
           .backgroundColor('#F5F5F5')
           .borderRadius(40)
+          .margin({ top: 4 })
 
           Column() {
-            Row() {
-              this.ScoreBar('技能', this.matchResult.skillScore)
-              this.ScoreBar('学历', this.matchResult.eduScore)
-            }
-            .width('100%')
-            Row() {
-              this.ScoreBar('城市', this.matchResult.cityScore)
-              this.ScoreBar('薪资', this.matchResult.salaryScore)
-            }
-            .width('100%')
+            this.ScoreBar('技能', this.matchResult.skillScore)
+            this.ScoreBar('学历', this.matchResult.eduScore)
+            this.ScoreBar('城市', this.matchResult.cityScore)
+            this.ScoreBar('薪资', this.matchResult.salaryScore)
           }
           .layoutWeight(1)
           .padding({ left: 16 })
+          .justifyContent(FlexAlign.Center)
         }
         .width('100%')
+        .alignItems(VerticalAlign.Center)
         .margin({ bottom: 12 })
 
         if (this.matchResult.reasons.length > 0) {
@@ -500,7 +522,7 @@ struct JobDetailPage {
       Text(label)
         .fontSize(11)
         .fontColor('#666666')
-        .width(30)
+        .width(34)
       Column() {
         Row() {
           Divider()
@@ -516,11 +538,12 @@ struct JobDetailPage {
       Text(`${score}%`)
         .fontSize(10)
         .fontColor('#999999')
-        .width(32)
+        .width(40)
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .margin({ bottom: 4 })
+    .alignItems(VerticalAlign.Center)
+    .margin({ bottom: 8 })
   }
 }
 
