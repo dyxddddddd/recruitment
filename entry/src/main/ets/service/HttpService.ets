@@ -1,5 +1,6 @@
 import { http } from '@kit.NetworkKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
+import { util } from '@kit.ArkTS'
 import { AppConstants } from '../common/constants/AppConstants'
 
 const TAG = 'HttpService'
@@ -44,14 +45,23 @@ export class HttpService {
   }
 
   static async request<T>(url: string, method: http.RequestMethod, body?: Object): Promise<ApiResult<T>> {
-    const request = http.createHttp()
+    const httpRequest = http.createHttp()
     try {
-      const response = await request.request(url, {
+      let extraData: string | ArrayBuffer | undefined = undefined
+      if (body) {
+        const jsonStr = JSON.stringify(body)
+        hilog.info(0x0000, TAG, 'POST %{public}s body(len=%{public}d): %{public}s',
+          url, jsonStr.length, jsonStr.substring(0, 200))
+        const encoder = new util.TextEncoder()
+        const uint8Array = encoder.encodeInto(jsonStr)
+        extraData = uint8Array.buffer.slice(uint8Array.byteOffset, uint8Array.byteOffset + uint8Array.byteLength) as ArrayBuffer
+      }
+      const response = await httpRequest.request(url, {
         method: method,
         header: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json; charset=utf-8'
         },
-        extraData: body ? JSON.stringify(body) : undefined,
+        extraData: extraData,
         expectDataType: http.HttpDataType.STRING,
         connectTimeout: 15000,
         readTimeout: 45000
@@ -68,7 +78,7 @@ export class HttpService {
       }
       return failed
     } finally {
-      request.destroy()
+      httpRequest.destroy()
     }
   }
 

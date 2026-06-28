@@ -390,6 +390,59 @@ export class RecruiterAIService {
     rs.close()
     return result
   }
+
+  // AI智能人才匹配
+  static async matchTalentsToJob(
+    jobTitle: string,
+    jobCategory: string,
+    jobSkills: string[],
+    jobEducation: string,
+    jobWorkHours: string,
+    candidates: AITalentMatchInput[]
+  ): Promise<AITalentMatchResult[]> {
+    if (candidates.length === 0) {
+      return []
+    }
+
+    const payload: TalentMatchPayload = {
+      jobTitle: jobTitle,
+      jobCategory: jobCategory,
+      jobDescription: '',
+      jobSkills: jobSkills,
+      jobEducation: jobEducation,
+      jobWorkHours: jobWorkHours,
+      candidates: candidates
+    }
+
+    try {
+      const result = await DeepSeekService.chatJson<TalentMatchAIResponse>(
+        [
+          '你是一个大学生招聘平台的AI人才匹配专家。',
+          '根据岗位要求，逐一评估每位候选人的匹配度，给出0-100的匹配分和简短理由。',
+          '匹配原则：',
+          '1. 技能匹配是最重要的维度（权重约40%）：候选人的技能与岗位要求技能的重合度，支持中英文同义词判断（如Office包含Excel/Word/PPT，数据可视化包含Tableau/Power BI等）',
+          '2. 专业相关性（权重约20%）：候选人的专业是否与岗位要求相关',
+          '3. 意向岗位匹配（权重约15%）：候选人的期望职位是否与岗位名称相关',
+          '4. 经验/项目相关度（权重约15%）：候选人的实习或项目经历是否与岗位相关',
+          '5. 学生类型与工时兼容性（权重约10%）：在校生更适合微任务/兼职，应届生更适合全职；如果岗位有时段要求（如晚间/周末），在校生得分更高',
+          '评分标准：',
+          '- 90-100：高度匹配，技能、专业、经验全面吻合',
+          '- 75-89：良好匹配，主要维度有2个以上吻合',
+          '- 60-74：部分匹配，有1-2个维度吻合',
+          '- 40-59：勉强匹配，仅学历或类型基本符合',
+          '- 20-39：匹配度低，缺乏相关性',
+          '- 0-19：基本不匹配',
+          '返回JSON：{ matches: [{ userId: "用户ID", score: 0-100数字, reason: "简短中文理由(20字内)" }] }',
+          '必须为每个候选人都返回一个匹配结果，不能遗漏。按score从高到低排序。'
+        ].join(' '),
+        JSON.stringify(payload)
+      )
+
+      return result.matches || []
+    } catch (e) {
+      throw new Error('AI matching failed')
+    }
+  }
 }
 
 export interface AIInterviewQuestion {
@@ -420,6 +473,41 @@ export interface AIAssessmentResult {
   dimensions: AIAssessmentDimension[]
   recommendation: string
   keywords: string[]
+}
+
+// ==== AI智能人才匹配 ====
+
+export interface AITalentMatchInput {
+  userId: string
+  realName: string
+  school: string
+  major: string
+  education: string
+  expectedPosition: string
+  studentType: string
+  skills: string[]
+  selfIntro: string
+  experience: string  // 工作/项目经历简述
+}
+
+export interface AITalentMatchResult {
+  userId: string
+  score: number
+  reason: string
+}
+
+interface TalentMatchPayload {
+  jobTitle: string
+  jobCategory: string
+  jobDescription: string
+  jobSkills: string[]
+  jobEducation: string
+  jobWorkHours: string  // 工时描述
+  candidates: AITalentMatchInput[]
+}
+
+interface TalentMatchAIResponse {
+  matches: AITalentMatchResult[]
 }
 
 export interface AssessmentSummaryItem {

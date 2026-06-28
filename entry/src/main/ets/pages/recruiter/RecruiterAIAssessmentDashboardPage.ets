@@ -158,6 +158,8 @@ export struct RecruiterAIAssessmentDashboardPage {
     // AIAssessmentResult格式（DeepSeek AI生成的），需要转换
     const ai = parsed as AIAssessmentResult
     return {
+      sessionId: 0,
+      position: '',
       totalScore: ai.totalScore || 0,
       summary: ai.summary || '',
       radar: {

@@ -1,8 +1,11 @@
 // 学生端 - AI虚拟面试中心（统一入口）
-import { router } from '@kit.ArkUI'
+import { router, promptAction } from '@kit.ArkUI'
+import { relationalStore } from '@kit.ArkData'
 import { AppConstants, AppState } from '../../common/constants/AppConstants'
 import { DatabaseHelper } from '../../database/DatabaseHelper'
 import { TABLE_AI_INTERVIEW, TABLE_USER, TABLE_JOB, TABLE_SYSTEM_MESSAGE } from '../../database/Tables'
+import { MessageDao } from '../../service/MessageDao'
+import { buildConversationId } from '../../model/MessageModel'
 
 interface InterviewItem {
   interviewId: string
@@ -23,6 +26,7 @@ export struct AIInterviewHubPage {
   @State showRules: boolean = false
   private pendingInterviewId: string = ''
   private pendingJobTitle: string = ''
+  private messageDao: MessageDao = new MessageDao()
 
   async aboutToAppear(): Promise<void> {
     await this.loadInterviews()
@@ -144,10 +148,74 @@ export struct AIInterviewHubPage {
     router.pushUrl({
       url: AppConstants.ROUTE_AI_INTERVIEW_VIDEO,
       params: {
-        sessionId: this.pendingInterviewId,
+        interviewId: this.pendingInterviewId,
         jobTitle: this.pendingJobTitle
       }
     })
+  }
+
+  async handleReject(item: InterviewItem): Promise<void> {
+    const store = await DatabaseHelper.getInstance().getStore()
+    await store.executeSql(
+      `UPDATE ${TABLE_AI_INTERVIEW} SET status = 'rejected', complete_time = ${Date.now()}
+       WHERE interview_id = '${item.interviewId}'`
+    )
+    this.activeList = this.activeList.filter(a => a.interviewId !== item.interviewId)
+
+    const currentUserId = AppState.currentUser?.userId
+    if (currentUserId) {
+      try {
+        const rs = await store.querySql(
+          `SELECT recruiter_id, job_id FROM ${TABLE_AI_INTERVIEW}
+           WHERE interview_id = '${item.interviewId}'`
+        )
+        if (rs.goToFirstRow()) {
+          const recruiterId = rs.getString(rs.getColumnIndex('recruiter_id'))
+          rs.close()
+          if (recruiterId) {
+            const userName = AppState.currentUser?.realName || AppState.currentUser?.phone || '学生'
+            // 系统消息通知 HR
+            const sysBucket: relationalStore.ValuesBucket = {
+              message_id: `sys_reject_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+              user_id: recruiterId,
+              title: '面试被拒绝',
+              content: `${userName} 拒绝了您发起的「${item.jobTitle}」AI虚拟面试邀请。`,
+              type: 'interview',
+              is_read: 0,
+              timestamp: Date.now()
+            } as relationalStore.ValuesBucket
+            await store.insert(TABLE_SYSTEM_MESSAGE, sysBucket)
+            // 聊天消息通知 HR
+            const conversationId = buildConversationId(currentUserId, recruiterId)
+            await this.messageDao.ensureConversation(conversationId, recruiterId, '')
+            const chatBucket: relationalStore.ValuesBucket = {
+              message_id: `msg_reject_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+              session_id: conversationId,
+              sender_id: currentUserId,
+              receiver_id: recruiterId,
+              content: `我已收到您发起的「${item.jobTitle}」AI虚拟面试邀请，经过考虑后决定暂不参加，感谢您的关注。`,
+              timestamp: Date.now(),
+              is_ai_agent_reply: 0,
+              message_type: 'text',
+              is_read: 0
+            } as relationalStore.ValuesBucket
+            await store.insert('tb_chat_message', chatBucket)
+            // 更新会话最后消息
+            const sessionBucket: relationalStore.ValuesBucket = {
+              last_message: chatBucket.content as string,
+              last_message_time: chatBucket.timestamp as number
+            }
+            const predicates = new relationalStore.RdbPredicates('tb_chat_session')
+            predicates.equalTo('session_id', conversationId)
+            await store.update(sessionBucket, predicates)
+          }
+        } else {
+          rs.close()
+        }
+      } catch (_e) { /* best effort */ }
+    }
+    AppStorage.setOrCreate('msg_refresh', Date.now())
+    promptAction.showToast({ message: '已拒绝该面试邀请', duration: 2000 })
   }
 
   getStatusText(status: string): string {
@@ -222,61 +290,84 @@ export struct AIInterviewHubPage {
         }
         .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else {
-        Scroll() {
-          Column() {
-            // 待参加的面试
-            if (this.activeList.length > 0) {
-              Column() {
-                Text('待参加')
-                  .fontSize(13).fontWeight(FontWeight.Medium).fontColor('#9B59B6')
-                  .margin({ bottom: 8 }).alignSelf(ItemAlign.Start)
-              }
-              .width('100%').padding({ left: 14, right: 14, top: 8 })
-
-              ForEach(this.activeList, (item: InterviewItem) => {
-                Column() {
-                  Row() {
-                    Column() {
-                      Text(item.companyName)
-                        .fontSize(11).fontColor('#9B59B6')
-                        .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-                        .backgroundColor('#F8F4FF').borderRadius(4)
-                        .margin({ bottom: 4 })
-                      Text(item.jobTitle)
-                        .fontSize(15).fontWeight(FontWeight.Medium).fontColor('#1A1A1A')
-                      Text(`邀请时间：${this.formatTime(item.inviteTime)}`)
-                        .fontSize(11).fontColor('#BBBBBB').margin({ top: 4 })
-                    }
-                    .alignItems(HorizontalAlign.Start).layoutWeight(1)
-
-                    Column() {
-                      Text(this.getStatusText(item.status))
-                        .fontSize(12).fontWeight(FontWeight.Medium)
-                        .fontColor(this.getStatusColor(item.status))
-                        .padding({ left: 10, right: 10, top: 3, bottom: 3 })
-                        .backgroundColor(this.getStatusBg(item.status)).borderRadius(8)
-                      Image($r('sys.symbol.chevron_right'))
-                        .width(14).height(14).fillColor('#CCCCCC').margin({ top: 6 })
-                    }
-                  }
-                  .width('100%').padding(14)
-                }
-                .width('100%').backgroundColor('#FFFFFF').borderRadius(12)
-                .margin({ left: 14, right: 14, bottom: 8 })
-                .onClick(() => this.handleInterviewClick(item))
-              })
+        List() {
+          // 待参加的面试
+          if (this.activeList.length > 0) {
+            ListItem() {
+              Text('待参加')
+                .fontSize(13).fontWeight(FontWeight.Medium).fontColor('#9B59B6')
+                .margin({ bottom: 8 })
             }
+            .width('100%').padding({ left: 14, right: 14, top: 8 })
+            .backgroundColor(Color.Transparent)
 
-            // 已完成的面试
-            if (this.doneList.length > 0) {
-              Column() {
-                Text('已完成')
-                  .fontSize(13).fontWeight(FontWeight.Medium).fontColor('#999999')
-                  .margin({ top: 8, bottom: 8 }).alignSelf(ItemAlign.Start)
+            ForEach(this.activeList, (item: InterviewItem) => {
+              ListItem() {
+                Row() {
+                  Column() {
+                    Text(item.companyName)
+                      .fontSize(11).fontColor('#9B59B6')
+                      .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+                      .backgroundColor('#F8F4FF').borderRadius(4)
+                      .margin({ bottom: 4 })
+                    Text(item.jobTitle)
+                      .fontSize(15).fontWeight(FontWeight.Medium).fontColor('#1A1A1A')
+                    Text(`邀请时间：${this.formatTime(item.inviteTime)}`)
+                      .fontSize(11).fontColor('#BBBBBB').margin({ top: 4 })
+                  }
+                  .alignItems(HorizontalAlign.Start).layoutWeight(1)
+
+                  Column() {
+                    Text(this.getStatusText(item.status))
+                      .fontSize(12).fontWeight(FontWeight.Medium)
+                      .fontColor(this.getStatusColor(item.status))
+                      .padding({ left: 10, right: 10, top: 3, bottom: 3 })
+                      .backgroundColor(this.getStatusBg(item.status)).borderRadius(8)
+                    Image($r('sys.symbol.chevron_right'))
+                      .width(14).height(14).fillColor('#CCCCCC').margin({ top: 6 })
+                  }
+                }
+                .width('100%').padding(14)
               }
-              .width('100%').padding({ left: 14, right: 14 })
+              .width('100%')
+              .backgroundColor('#FFFFFF')
+              .borderRadius(12)
+              .margin({ left: 14, right: 14, bottom: 8 })
+              .onClick(() => this.handleInterviewClick(item))
+              .swipeAction({
+                end: {
+                  builder: () => {
+                    this.RejectSwipeButton()
+                  },
+                  onAction: () => {
+                    AlertDialog.show({
+                      title: '拒绝面试',
+                      message: `确定拒绝「${item.companyName}」发起的「${item.jobTitle}」AI虚拟面试邀请吗？`,
+                      primaryButton: {
+                        value: '确定拒绝',
+                        fontColor: '#FF4D4F',
+                        action: () => this.handleReject(item)
+                      },
+                      secondaryButton: { value: '取消', action: () => {} }
+                    })
+                  }
+                }
+              })
+            })
+          }
 
-              ForEach(this.doneList, (item: InterviewItem) => {
+          // 已完成的面试
+          if (this.doneList.length > 0) {
+            ListItem() {
+              Text('已完成')
+                .fontSize(13).fontWeight(FontWeight.Medium).fontColor('#999999')
+                .margin({ top: 8, bottom: 8 })
+            }
+            .width('100%').padding({ left: 14, right: 14 })
+            .backgroundColor(Color.Transparent)
+
+            ForEach(this.doneList, (item: InterviewItem) => {
+              ListItem() {
                 Row() {
                   Column() {
                     Text(item.companyName)
@@ -302,15 +393,17 @@ export struct AIInterviewHubPage {
                   .alignItems(HorizontalAlign.Center)
                 }
                 .width('100%').padding(14)
-                .backgroundColor('#FAFAFA').borderRadius(10)
-                .margin({ left: 14, right: 14, bottom: 6 })
-              })
-            }
+              }
+              .width('100%')
+              .backgroundColor('#FAFAFA')
+              .borderRadius(10)
+              .margin({ left: 14, right: 14, bottom: 6 })
+            })
           }
-          .width('100%').justifyContent(FlexAlign.Start).alignSelf(ItemAlign.Start).padding({ bottom: 24 })
         }
-        .width('100%').layoutWeight(1).align(Alignment.TopStart)
-        .backgroundColor('#F4F6FB').scrollBar(BarState.Off)
+        .width('100%').layoutWeight(1)
+        .backgroundColor('#F4F6FB')
+        .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.None)
       }
     }
@@ -326,11 +419,11 @@ export struct AIInterviewHubPage {
               .margin({ bottom: 12 })
 
             Column() {
-              this.RuleItem('1', '准备环境', '找一个安静、光线充足的地方，确保网络稳定。')
-              this.RuleItem('2', '逐题录制', '每题单独录音作答，最长3分钟，想好再开始。')
-              this.RuleItem('3', '自由安排', '无需预约时间，所有题目可自由安排录制顺序。')
-              this.RuleItem('4', '评估维度', 'AI将从表达逻辑、抗压能力、技术真实度、团队协作、学习潜力五个维度综合评估。')
-              this.RuleItem('5', '提交评估', '全部题目录制完毕后，点击提交按钮。HR将收到你的面试录音和评估报告。')
+              this.RuleItem('1', '准备环境', '找一个安静、光线充足的地方，整理仪容，确保网络稳定。')
+              this.RuleItem('2', '视频录制', '每题先听语音播报题面，然后录制回答，每题最长3分钟。')
+              this.RuleItem('3', '后端评估', '录制完成后自动提交到后端，进行语音识别、表情神态分析和多维度评分。')
+              this.RuleItem('4', '评估维度', '后端将从表达逻辑、抗压能力、神态表情、语音语调等多维度综合评估。')
+              this.RuleItem('5', '查看报告', '全部答完后后端生成评估报告，HR将收到通知。')
             }
             .width('100%').margin({ top: 4, bottom: 16 })
 
@@ -353,6 +446,18 @@ export struct AIInterviewHubPage {
         .justifyContent(FlexAlign.Center)
       }
     }
+  }
+
+  @Builder
+  RejectSwipeButton() {
+    Column() {
+      Text('拒绝')
+        .fontSize(14).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
+    }
+    .width(72).height('100%')
+    .backgroundColor('#FF4D4F')
+    .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+    .borderRadius(12)
   }
 
   @Builder

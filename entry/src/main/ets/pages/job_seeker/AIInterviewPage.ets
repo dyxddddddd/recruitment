@@ -34,13 +34,16 @@ export struct AIInterviewPage {
 
   async aboutToAppear(): Promise<void> {
     const params = router.getParams() as Record<string, Object>
-    this.interviewId = (params['interviewId'] as string) || ''
-    this.jobTitle = (params['jobTitle'] as string) || 'AI面试'
-    if (!this.interviewId || !AppState.currentUser) {
-      this.status = 'error'
+    this.interviewId = (params ? (params['interviewId'] as string) : '') || ''
+    this.jobTitle = (params ? (params['jobTitle'] as string) : '') || 'AI面试'
+    if (!AppState.currentUser) {
+      this.status = 'error_no_user'
       return
     }
-    // 加载基本信息，显示介绍页
+    if (!this.interviewId) {
+      this.status = 'error_no_id'
+      return
+    }
     await this.loadBasicInfo()
   }
 
@@ -71,9 +74,9 @@ export struct AIInterviewPage {
     }
   }
 
-  startInterview(): void {
+  async startInterview(): Promise<void> {
     this.status = 'loading'
-    this.initInterview()
+    await this.initInterview()
   }
 
   async initInterview(): Promise<void> {
@@ -102,14 +105,22 @@ export struct AIInterviewPage {
       }
 
       if (existingQuestions && existingQuestions.length > 0) {
-        this.questions = JSON.parse(existingQuestions) as AIInterviewQuestion[]
-      } else {
+        const parsed = JSON.parse(existingQuestions) as AIInterviewQuestion[]
+        if (parsed.length > 0) {
+          this.questions = parsed
+        }
+      }
+      if (this.questions.length === 0) {
         const resumeDao = new ResumeDao()
         const resume = await resumeDao.getResumeByUserId(AppState.currentUser!.userId)
         const resumeText = resume ? `姓名：${resume.realName}，学校：${resume.school}，专业：${resume.major}，技能：${(resume.skills || []).join('、')}，自我介绍：${resume.selfIntro || ''}` : ''
-        this.questions = await RecruiterAIService.generateInterviewQuestions(
-          resumeText, this.jobTitle, '', []
-        )
+        try {
+          this.questions = await RecruiterAIService.generateInterviewQuestions(
+            resumeText, this.jobTitle, '', []
+          )
+        } catch (_e) {
+          // DeepSeek 不可用时使用默认题目
+        }
         if (this.questions.length === 0) {
           this.questions = this.getDefaultQuestions()
         }
@@ -133,8 +144,9 @@ export struct AIInterviewPage {
         this.currentRound = 1
         this.scrollToBottom()
       }, 600)
-    } catch (_e) {
+    } catch (e) {
       this.status = 'error'
+      AlertDialog.show({ title: '面试加载失败', message: `错误详情：${(e as Error).message || JSON.stringify(e)}` })
     }
   }
 
@@ -331,10 +343,15 @@ export struct AIInterviewPage {
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
-      } else if (this.status === 'error') {
+      } else if (this.status === 'error' || this.status === 'error_no_id' || this.status === 'error_no_user') {
         Column() {
           Text('😕').fontSize(48).margin({ bottom: 12 })
-          Text('面试信息加载失败').fontSize(14).fontColor('#999999')
+          Text(this.status === 'error_no_user' ? '请先登录后再参加面试' : '面试信息加载失败')
+            .fontSize(14).fontColor('#999999')
+          if (this.status === 'error') {
+            Text('面试ID: ' + (this.interviewId || '无'))
+              .fontSize(11).fontColor('#CCCCCC').margin({ top: 6 })
+          }
           Button('返回').margin({ top: 16 }).onClick(() => router.back())
         }
         .width('100%')

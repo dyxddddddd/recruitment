@@ -334,7 +334,7 @@ export struct RecruiterProfileTab {
           const isReviewed = dbStatus === 'reviewed'
           if (!isReviewed) unreviewed++
           list.push({
-            interviewId: s.sessionId,
+            interviewId: `${s.sessionId}`,
             userId: dbUserId,
             applicantName: applicantName || s.position,
             school: school,
@@ -379,26 +379,33 @@ export struct RecruiterProfileTab {
     try {
       for (const item of this.inboxList) {
         if (!this.selectedInboxIds.has(item.userId)) continue
+        let interviewId = ''
         try {
           const result = await InterviewApiService.createInterview({
             userId: item.userId,
             position: item.jobTitle
           })
+          interviewId = `${result.sessionId}`
           const questionsJson = JSON.stringify(result.questions || []).replace(/'/g, "''")
           await store.executeSql(
             `INSERT INTO ${TABLE_AI_INTERVIEW} (interview_id, recruiter_id, user_id, job_id, application_id, status, questions, invite_time)
-             VALUES ('${result.sessionId}', '${user.userId}', '${item.userId}', '${item.jobId}', '${item.applicationId}', 'invited', '${questionsJson}', ${Date.now()})`
+             VALUES ('${interviewId}', '${user.userId}', '${item.userId}', '${item.jobId}', '${item.applicationId}', 'invited', '${questionsJson}', ${Date.now()})`
           )
-          await this.messageDao.insertSystemMessage(
-            item.userId,
-            'AI虚拟面试邀请',
-            `[INTERVIEW:${result.sessionId}]${user.companyName || '企业'}邀请你参加「${item.jobTitle}」的AI视频面试（含数字人面试官+多维度评估）。请前往消息页查看并开始面试。`,
-            'interview'
+        } catch (_backendErr) {
+          // 后端不可用，本地创建面试记录（题目由学生端 DeepSeek 动态生成）
+          interviewId = `ai_local_${Date.now()}_${item.userId}`
+          await store.executeSql(
+            `INSERT INTO ${TABLE_AI_INTERVIEW} (interview_id, recruiter_id, user_id, job_id, application_id, status, questions, invite_time)
+             VALUES ('${interviewId}', '${user.userId}', '${item.userId}', '${item.jobId}', '${item.applicationId}', 'invited', '', ${Date.now()})`
           )
-          sentCount++
-        } catch (_e) {
-          // 单个失败继续发下一个
         }
+        await this.messageDao.insertSystemMessage(
+          item.userId,
+          'AI虚拟面试邀请',
+          `[INTERVIEW:${interviewId}]${user.companyName || '企业'}邀请你参加「${item.jobTitle}」的AI虚拟面试。请前往消息页查看并开始面试。`,
+          'interview'
+        )
+        sentCount++
       }
       if (sentCount > 0) {
         AlertDialog.show({ title: '发送成功', message: `已向 ${sentCount} 名学生发送AI面试邀请。` })

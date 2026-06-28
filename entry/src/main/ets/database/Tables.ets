@@ -1,7 +1,7 @@
 // 数据库表结构定义
 
 export const DATABASE_NAME = 'UniCampus.db'
-export const DATABASE_VERSION = 9
+export const DATABASE_VERSION = 10
 
 // 用户表
 export const TABLE_USER = 'tb_user'

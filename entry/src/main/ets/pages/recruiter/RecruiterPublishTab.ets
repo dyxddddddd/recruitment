@@ -397,6 +397,9 @@ export struct RecruiterPublishTab {
 
     await this.jobDao.insertJob(job)
 
+    // 通知人才Tab刷新匹配
+    AppStorage.setOrCreate<number>('talent_refresh', Date.now())
+
     AlertDialog.show({
       title: '✅ 发布成功！',
       message: '岗位已成功发布！可在「我的」→「已发布岗位管理」中查看详情和 AI 工时拼图分析。',

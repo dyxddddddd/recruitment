@@ -204,7 +204,7 @@ export struct JobSeekerMessagesTab {
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 8 })
 
-      Divider().height(1).color('#F0F0F0')
+      Row().width('100%').height(1).backgroundColor('#F0F0F0')
 
       // AI面试入口（紧凑单行）
       Row() {
